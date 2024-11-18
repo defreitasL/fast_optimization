@@ -1,24 +1,7 @@
 import numpy as np
 from numba import jit
-
-# @jit(nopython=True)
-# def initialize_population(population_size, Y):
-#     # Define os limites logarítmicos para cada parâmetro (a, b, cacr, cero, Yini)
-#     log_lower_bounds = np.array([np.log(1e-5), np.log(1e-4), np.log(1e-6), np.log(1e-6), Y[0]])
-#     log_upper_bounds = np.array([np.log(1e+2), np.log(1e+3), np.log(1e-1), np.log(1e-1), Y[1]])
-    
-#     # Inicializa a população dentro dos limites logarítmicos
-#     population = np.zeros((population_size, 5))
-#     for i in range(5):
-#         population[:, i] = np.random.uniform(log_lower_bounds[i], log_upper_bounds[i], population_size)
-#     return population, log_lower_bounds, log_upper_bounds
-
-# @jit(nopython=True)
-# def model_simulation(params, E, dt, idx_obs):
-#     # Executa o modelo com parâmetros dados transformados
-#     a, b, cacr, cero, Yini = params
-#     Ymd, _ = yates09(E, dt, -np.exp(a), np.exp(b), -np.exp(cacr), -np.exp(cero), Yini)
-#     return Ymd[idx_obs]
+from IHSetYates09 import model_simulation
+from .objectives_functions import obj_func
 
 @jit(nopython=True)
 def fast_non_dominated_sort(objectives):
@@ -180,20 +163,20 @@ def select_niched_population(population, objectives, num_to_select):
     return population[selected_indices], objectives[selected_indices]
 
 @jit(nopython=True)
-def nsgaii_algorithm(objective_function, model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, regeneration_rate):
+def nsgaii_algorithm(objective_function, model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, regeneration_rate, index_metrics):
     # Inicializar a população
     population, lower_bounds, upper_bounds = initialize_population(population_size)
     npar = population.shape[1]
-    objectives = np.empty((population_size, 3))  # Três objetivos: KGE, NSE, MSS
+    nobj = len(index_metrics)
+    objectives = np.empty((population_size, nobj))  # Três objetivos: KGE, NSE, MSS
 
     # Avaliar a população inicial
     for i in range(population_size):
         # simulation = model_simulation(population[i], E_splited, dt, idx_obs_splited, Obs_splited[0])
         simulation = model_simulation(population[i])
-        objectives[i] = objective_function(Obs, simulation)
+        objectives[i] = objective_function(Obs, simulation, index_metrics)
 
     # Proporção da população a ser regenerada a cada geração
-    regeneration_rate = 0.1  # Por exemplo, 10% da população
     num_to_regenerate = int(np.ceil(regeneration_rate * population_size))
 
     # Loop principal do algoritmo NSGA-II
@@ -231,27 +214,31 @@ def nsgaii_algorithm(objective_function, model_simulation, Obs, initialize_popul
         for i in range(population_size):
             # simulation = model_simulation(offspring[i], E_splited, dt, idx_obs_splited, Obs_splited[0])
             simulation = model_simulation(offspring[i])
-            new_objectives[i] = objective_function(Obs, simulation)
+            new_objectives[i] = objective_function(Obs, simulation, index_metrics)
 
         # Preparar a próxima geração
         population = offspring
         objectives = new_objectives
 
+        if generation % 1000 == 0:
+            print(f"Generation {generation} of {num_generations} completed")
+
     return population, objectives
 
 @jit(nopython=True)
-def nsgaii_algorithm_ts(objective_function, model_simulation, Obs, initialize_population, num_generations, population_size, pressure, regeneration_rate):
+def nsgaii_algorithm_ts(objective_function, model_simulation, Obs, initialize_population, num_generations, population_size, pressure, regeneration_rate, index_metrics):
 
     # Inicializar a população
     population, lower_bounds, upper_bounds = initialize_population(population_size)
     npar = population.shape[1]
-    objectives = np.empty((population_size, 3))  # Três objetivos: KGE, NSE, MSS
+    nobj = len(index_metrics)
+    objectives = np.empty((population_size, nobj))  # Três objetivos: KGE, NSE, MSS
 
     # Avaliar a população inicial
     for i in range(population_size):
         # simulation = model_simulation(population[i], E_splited, dt, idx_obs_splited, Obs_splited[0])
         simulation = model_simulation(population[i])
-        objectives[i] = objective_function(Obs, simulation)
+        objectives[i] = objective_function(Obs, simulation, index_metrics)
 
     # Proporção da população a ser regenerada a cada geração
     num_to_regenerate = int(np.ceil(regeneration_rate * population_size))
@@ -276,7 +263,7 @@ def nsgaii_algorithm_ts(objective_function, model_simulation, Obs, initialize_po
         for i in range(population_size):
             # simulation = model_simulation(offspring[i], E_splited, dt, idx_obs_splited, Obs_splited[0])
             simulation = model_simulation(offspring[i])
-            new_objectives[i] = objective_function(Obs, simulation)
+            new_objectives[i] = objective_function(Obs, simulation, index_metrics)
 
         # Preparar a próxima geração
         population = offspring
@@ -284,3 +271,19 @@ def nsgaii_algorithm_ts(objective_function, model_simulation, Obs, initialize_po
 
 
     return population, objectives
+
+
+# @jit(nopython=True)
+# def initialize_population(population_size, lower_bounds, upper_bounds):
+#     # Inicializa a população dentro dos limites logarítmicos
+#     population = np.zeros((population_size, len(lower_bounds)))
+#     for i in range(len(lower_bounds)):
+#         population[:, i] = np.random.uniform(lower_bounds[i], upper_bounds[i], population_size)
+#     return population
+
+# @jit(nopython=True)
+# def model_simulation(E, dt, Yini, idx_obs, params):
+#     # Executa o modelo com parâmetros dados transformados
+#     a, b, cacr, cero = params
+#     Ymd, _ = yates09(E, dt, -np.exp(a), np.exp(b), -np.exp(cacr), -np.exp(cero), Yini)
+#     return Ymd[idx_obs]
