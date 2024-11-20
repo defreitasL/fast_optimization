@@ -1,5 +1,5 @@
 
-# IHSetCalibrationFast Optimization
+# Fast Optimization
 Python package to perform the calibration in IH-SET software.
 
 ## :house: Local installation
@@ -12,7 +12,7 @@ pip install git+https://github.com/defreitasL/fast_optimization.git
 ## :package: Package structures
 ````
 
-IHSetCalibration
+fast_optimization
 |
 ├── LICENSE
 ├── README.md
