@@ -1,81 +1,188 @@
 import numpy as np
-import numba
-from .NSGAII import tournament_selection
+from numba import jit
+import math
+from .objectives_functions import multi_obj_func, select_best_solution
 
-@numba.jit(nopython=True)
-def spea2_algorithm(objective_function, model_simulation, Obs, initialize_population, num_generations, population_size, pressure, regeneration_rate, cross_prob, mutation_rate, mutation_variance, ):
-    # Inicialização da população
-    y_min_max = np.array([min(Obs), max(Obs)])
-    population, lb, ub = initialize_population(population_size, y_min_max)
+def spea2_algorithm(model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, pressure, regeneration_rate, m, eta_mut, kstop, pcento, peps, index_metrics):
+    """
+    SPEA2 Optimization Algorithm (Adapted to Python).
+    This algorithm aims to optimize an objective function by evolving a population using environmental selection and genetic operations.
+    
+    Parameters:
+    - model_simulation: Function that simulates the model given an input vector of parameters.
+    - Obs: Observed data used for calculating the fitness.
+    - initialize_population: Function to initialize the population.
+    - num_generations: Number of generations to evolve.
+    - population_size: Size of the population.
+    - cross_prob: Probability of crossover.
+    - mutation_rate: Probability of mutation.
+    - pressure: Selection pressure for tournament selection.
+    - regeneration_rate: Proportion of the population to be regenerated each generation.
+    - m: Number of neighbors to consider in environmental selection.
+    - eta_mut: Mutation parameter for polynomial mutation.
+    - kstop: Number of past evolution loops to assess convergence.
+    - pcento: Percentage improvement allowed in the past kstop loops for convergence.
+    - peps: Threshold for the normalized geometric range of parameters to determine convergence.
+    - index_metrics: Index used for multi-objective evaluation.
+
+    Returns:
+    - best_individual: The best solution found.
+    - best_fitness: Fitness value of the best solution.
+    - best_fitness_history: History of the best fitness values over generations.
+    """
+    
+    # Initialize the population
+    population, lb, ub = initialize_population(population_size)
     npar = population.shape[1]
-    objectives = np.zeros((population_size, 3))
+    n_obj = len(index_metrics)
+    objectives = np.zeros((population_size, n_obj))
 
-    # Avaliação inicial da população
+    # Evaluate initial population
     for i in range(population_size):
-        # simulation = model_simulation(population[i], E_splited, dt, idx_obs_splited, Obs_splited[0])
         simulation = model_simulation(population[i])
-        objectives[i] = objective_function(Obs, simulation)
-   
-    # Proporção da população a ser regenerada a cada geração
+        objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
+
+    print('Precompilation done!')
+    print('Starting SPEA2 algorithm...')
+
+    # Number of individuals to regenerate each generation
     num_to_regenerate = int(np.ceil(regeneration_rate * population_size))
 
-    # Loop principal do algoritmo SPEA2
+    best_fitness_history = []
+    best_individuals = []
+
+    # Main loop of the SPEA2 algorithm
     for generation in range(num_generations):
-        # Seleção ambiental e geração de arquivos
-        # population, objectives = remove_identical_solutions(population, objectives)
-        archive, archive_fitness, archive_objectives = environmental_selection(population, objectives)
-        # Seleção dos pais e reprodução
-        # mating_pool = tournament_selection2(archive, archive_fitness)
-        pool_indexes = tournament_selection(archive_fitness, pressure)
-        mating_pool = archive[pool_indexes]
-        offspring = genetic_operators2(mating_pool, cross_prob, mutation_rate, npar, lb, ub, mutation_variance)
+        # Environmental selection and archive generation
+        archive, archive_fitness, archive_objectives = environmental_selection(population, objectives, m)
 
-        # Avaliação da prole
-        offspring_objectives = np.zeros((len(offspring),3))
-        for i in range(len(offspring)):
-            # simulation = model_simulation(offspring[i], E_splited, dt, idx_obs_splited, Obs_splited[0])
-            simulation = model_simulation(offspring[i])
-            offspring_objectives[i] = objective_function(Obs, simulation)
+        # Prevent empty archive
+        if len(archive) == 0:
+            sorted_indices = np.argsort(archive_fitness)
+            archive = population[sorted_indices[:1], :]
+            archive_objectives = objectives[sorted_indices[:1], :]
+            archive_fitness = archive_fitness[sorted_indices[:1]]
 
-        # Reintroduzir novos indivíduos aleatórios para manter a diversidade genética
-        new_individuals, _, _ = initialize_population(num_to_regenerate, y_min_max)
-        new_individuals_objectives = np.zeros((num_to_regenerate, 3))
-        for i in range(num_to_regenerate):
-            # simulation = model_simulation(new_individuals[i], E_splited, dt, idx_obs_splited, Obs_splited[0])
-            simulation = model_simulation(new_individuals[i])
-            new_individuals_objectives[i] = objective_function(Obs, simulation)
+        # Limit archive size to population size
+        if len(archive) > population_size:
+            archive_indices = np.argsort(archive_fitness)[:population_size]
+            archive = archive[archive_indices]
+            archive_objectives = archive_objectives[archive_indices]
+            archive_fitness = archive_fitness[archive_indices]
         
+        # Parent selection and reproduction
+        ranks = np.argsort(archive_fitness)  # Update ranks based on fitness
+        crowding_distances = crowd_distance(archive_objectives, ranks)
+        pool_indexes = tournament_selection_with_crowding(ranks, crowding_distances, pressure)
+        mating_pool = archive[pool_indexes]
+        
+        # Crossover operation
+        min_cross_prob = 0.1  # Set a minimum crossover probability to maintain diversity
+        adaptive_cross_prob = max(cross_prob * (1 - generation / num_generations), min_cross_prob)
+        offspring = crossover(mating_pool, npar, adaptive_cross_prob, lb, ub)
+        
+        # Mutation operation
+        min_mutation_rate = 0.01  # Set a minimum mutation rate to prevent premature convergence
+        adaptive_mutation_rate = max(mutation_rate * (1 - generation / num_generations), min_mutation_rate)
+        offspring = polynomial_mutation(offspring, adaptive_mutation_rate, npar, lb, ub, eta_mut)
+
+        # Evaluate offspring
+        offspring_objectives = np.zeros((len(offspring), n_obj))
+        for i in range(len(offspring)):
+            simulation = model_simulation(offspring[i])
+            offspring_objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
+
+        # Reintroduce new individuals to maintain genetic diversity
+        new_individuals, _, _ = initialize_population(num_to_regenerate)
+        new_individuals_objectives = np.zeros((num_to_regenerate, n_obj))
+        for i in range(num_to_regenerate):
+            simulation = model_simulation(new_individuals[i])
+            new_individuals_objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
+
         population = np.vstack((archive, offspring, new_individuals))
         objectives = np.vstack((archive_objectives, offspring_objectives, new_individuals_objectives))
-        
+
+        # Ensure the population size is correct
         if len(population) < population_size:
-            additional_pop, _, _= initialize_population(population_size - len(population), y_min_max)
-            additional_obj = np.zeros((population_size - len(population), 3))
+            additional_pop, _, _ = initialize_population(population_size - len(population))
+            additional_obj = np.zeros((population_size - len(population), n_obj))
             for i in range(len(additional_pop)):
-                # simulation = model_simulation(additional_pop[i], E_splited, dt, idx_obs_splited, Obs_splited[0])
                 simulation = model_simulation(additional_pop[i])
-                additional_obj[i] = objective_function(Obs, simulation)
+                additional_obj[i] = multi_obj_func(Obs, simulation, index_metrics)
+
             population = np.vstack((population, additional_pop))
             objectives = np.vstack((objectives, additional_obj))
 
-    return population, objectives
+        # Early stopping based on improvement criteria
+        ii = select_best_solution(objectives)[0]
+        current_best_fitness = objectives[ii]
+        best_fitness_history.append(current_best_fitness)
+        best_individuals.append(population[ii])
 
-@numba.jit(nopython=True)
-def environmental_selection(population, objectives):
+        if generation > kstop:
+            # Normalize objectives for proper comparison
+            normalized_objectives = (objectives - objectives.min(axis=0)) / (objectives.max(axis=0) - objectives.min(axis=0) + 1e-10)
+            mean_normalized_fitness = np.mean(np.sum(normalized_objectives, axis=1))
+            previous_mean_fitness = np.mean(np.sum((best_fitness_history[-kstop]), axis=0)) if len(best_fitness_history) >= kstop else mean_normalized_fitness
+            recent_improvement = (previous_mean_fitness - mean_normalized_fitness) / abs(previous_mean_fitness)
+            if recent_improvement < pcento:
+                print(f"Converged at generation {generation} based on improvement criteria.")
+                break
 
-    npop = len(population)
-    dist = euclidean_distances(objectives)
+        # Early stopping based on parameter space convergence
+        epsilon = 1e-10
+        gnrng = np.exp(np.mean(np.log((np.max(population, axis=0) - np.min(population, axis=0) + epsilon) / (ub - lb))))
+        if gnrng < peps:
+            print(f"Converged at generation {generation} based on parameter space convergence.")
+            break
 
-    m = 2  # Assuming m=2
-    # for d in range(len(dist)):
-    #     for i in range(len(dist[d])):
-    #         if dist[d][i] == 0:
-    #             dist[d][i] = 1e-10
-    # idx_zero = np.where((dist == 0))[0]
-    # dist[idx_zero] = 1e-10
+        if generation % (num_generations // 50) == 0:
+            print(f"Generation {generation} of {num_generations} completed")
+    
+    # Select the best final solution
+    total_objectives = np.vstack((objectives, np.array(best_fitness_history)))
+    total_individuals = np.vstack((population, np.array(best_individuals)))
+    best_index = select_best_solution(total_objectives)[0]
+    best_fitness = total_objectives[best_index]
+    best_individual = total_individuals[best_index]
+
+    return best_individual, best_fitness, best_fitness_history
+
+@jit(nopython=True)
+def environmental_selection(population, objectives, m):
+    """
+    Perform environmental selection by calculating fitness and density estimates, selecting individuals for the next generation archive.
+    
+    Parameters:
+    - population: The current population of individuals.
+    - objectives: Objective values for each individual.
+    - m: Number of neighbors to consider for density estimation.
+    
+    Returns:
+    - archive: The selected archive population.
+    - archive_fitness: Fitness values of the individuals in the archive.
+    - archive_obj: Objective values of the individuals in the archive.
+    """
+    npop, nobj = objectives.shape
+
+    min_values = np.full(nobj, np.inf)
+    max_values = np.full(nobj, -np.inf)
+    
+    for i in range(npop):
+        for j in range(nobj):
+            if objectives[i, j] < min_values[j]:
+                min_values[j] = objectives[i, j]
+            if objectives[i, j] > max_values[j]:
+                max_values[j] = objectives[i, j]
+    
+    # Normalize objectives to avoid magnitude issues
+    normalized_objectives = (objectives - min_values) / (max_values - min_values + 1e-10)
+    dist = euclidean_distances(normalized_objectives)
+
     k = np.mean(dist) / 5
     if k == 0:
         k = 1e-6
+    
     # Calculate raw fitness and density estimates
     fitness_values = np.sum(np.exp(-1 * (dist ** 2) / (2 * k ** 2)), axis=1)
     density_estimate = np.zeros(npop)
@@ -84,7 +191,7 @@ def environmental_selection(population, objectives):
         sorted_distances = np.sort(dist[i, :])
         if sorted_distances[m+1] == 0:
             sorted_distances[m+1] = 1e-10
-        density_estimate[i] = 1 / (2 * k) * (1 / sorted_distances[m+1])  # assuming m=2
+        density_estimate[i] = 1 / (2 * k) * (1 / sorted_distances[m+1])
 
     combined_fitness = fitness_values + density_estimate
     median_fitness = np.median(combined_fitness)
@@ -95,107 +202,178 @@ def environmental_selection(population, objectives):
 
     return archive, archive_fitness, archive_obj
 
-@numba.jit(nopython=True)
-def tournament_selection2(population, fitness):
-    npop, npar = population.shape
-    selected = np.empty((npop, npar), dtype=population.dtype)
-    indices = random_permutation(npop)
-
-    for i in range(npop):
-        # Evitar o problema com o if in-line definindo explicitamente os índices dos competidores
-        if i + 1 < npop:
-            competitors = [indices[i], indices[i + 1]]
-        else:
-            # Garantir que sempre temos dois competidores (pode repetir o último se necessário)
-            competitors = [indices[i], indices[0]]  # O segundo competidor é o primeiro do array se estivermos no fim
-
-        # Comparar os fitness dos competidores
-        if fitness[competitors[0]] < fitness[competitors[1]]:
-            selected[i, :] = population[competitors[0], :]
-        else:
-            selected[i, :] = population[competitors[1], :]
-
-    return selected
-
-@numba.jit(nopython=True)
-def genetic_operators2(parents, crossover_prob, mutation_rate, num_vars, lower_bounds, upper_bounds, mutation_variance=0.05):
-    num_parents, npar = parents.shape
-    num_offspring = num_parents - (num_parents % 2)  # Garante um número par de filhos
-    offspring = np.empty((num_offspring, npar), dtype=parents.dtype)
-
-    # Preparando pais para crossover e mutação
-    prepared_parents = np.empty_like(parents)
-    for i in range(0, num_parents, 2):
-        if i + 1 < num_parents:
-            prepared_parents[i:i+2] = crossover(parents[i:i+2], num_vars, crossover_prob, lower_bounds, upper_bounds)
-
-    # Aplica mutação em todos os filhos gerados pelo crossover
-    for i in range(num_offspring):
-        offspring[i] = polynomial_mutation(prepared_parents[i], mutation_rate, num_vars, lower_bounds, upper_bounds, mutation_variance)
-
-    return offspring
-
-@numba.jit(nopython=True)
-def crossover(parents, num_vars, crossover_prob, lower_bounds, upper_bounds):
-    offspring = parents.copy()
-    if np.random.rand() < crossover_prob:
-        cross_point = np.random.randint(1, num_vars)
-        # Realiza o crossover
-        offspring[0, cross_point:], offspring[1, cross_point:] = offspring[1, cross_point:].copy(), offspring[0, cross_point:].copy()
-
-        # Aplica a verificação de limites para garantir que os valores estejam dentro dos limites
-        # for j in range(cross_point, num_vars):
-        #     offspring[0, j] = min(max(offspring[0, j], lower_bounds[j]), upper_bounds[j])
-        #     offspring[1, j] = min(max(offspring[1, j], lower_bounds[j]), upper_bounds[j])
+@jit
+def crowd_distance(objectives, ranks):
+    """
+    Calculate crowding distance for each individual in the population.
     
-    return offspring
+    Parameters:
+    - objectives: Objective values for each individual.
+    - ranks: Ranks of individuals based on fitness.
+    
+    Returns:
+    - distances: Crowding distance for each individual.
+    """
+    population_size = objectives.shape[0]
+    nobj = objectives.shape[1]
+    distances = np.zeros(population_size, dtype=np.float64)
 
-@numba.jit(nopython=True)
-def polynomial_mutation(population, mutation_rate, num_vars, lower_bounds, upper_bounds, mutation_variance=0.05):
-    for j in range(num_vars):
-        if np.random.rand() < mutation_rate:
-            # A mutação é um ajuste pequeno de 5% da faixa do parâmetro
-            range_val = upper_bounds[j] - lower_bounds[j]
-            delta = np.random.uniform(-mutation_variance * range_val, mutation_variance * range_val)
-            mutated_value = population[j] + delta
-            # Garante que o valor mutado esteja dentro dos limites
-            mutated_value = max(lower_bounds[j], min(mutated_value, upper_bounds[j]))
-            population[j] = mutated_value
-    return population
+    for rank in range(np.max(ranks) + 1):
+        front = np.where(ranks == rank)[0]
+        if len(front) == 0:
+            continue
 
-@numba.jit(nopython=True)
+        for m in range(nobj):
+            sorted_indices = front[np.argsort(objectives[front, m])]
+            distances[sorted_indices[0]] = np.inf
+            distances[sorted_indices[-1]] = np.inf
+            min_value = objectives[sorted_indices[0], m]
+            max_value = objectives[sorted_indices[-1], m]
+
+            if max_value - min_value == 0:
+                continue
+
+            for i in range(1, len(sorted_indices) - 1):
+                distances[sorted_indices[i]] += (
+                    (objectives[sorted_indices[i + 1], m] - objectives[sorted_indices[i - 1], m])
+                    / (max_value - min_value)
+                )
+
+    return distances
+
+@jit(nopython=True)
+def tournament_selection_with_crowding(ranks, crowding_distances, pressure):
+    """
+    Perform tournament selection with crowding distance as a tiebreaker.
+    
+    Parameters:
+    - ranks: Ranks of individuals based on fitness.
+    - crowding_distances: Crowding distances for each individual.
+    - pressure: Selection pressure for tournament selection.
+    
+    Returns:
+    - selected_indices: Indices of the individuals selected for the mating pool.
+    """
+    n_select = len(ranks)
+    n_random = n_select * pressure
+    n_perms = math.ceil(n_random / len(ranks))
+
+    P = np.empty((n_random,), dtype=np.int32)
+    for i in range(n_perms):
+        P[i * len(ranks):(i + 1) * len(ranks)] = np.random.permutation(len(ranks))
+    P = P[:n_random].reshape(n_select, pressure)
+
+    selected_indices = np.full(n_select, -1, dtype=np.int32)
+    for i in range(n_select):
+        a, b = P[i]
+        if ranks[a] < ranks[b]:
+            selected_indices[i] = a
+        elif ranks[a] > ranks[b]:
+            selected_indices[i] = b
+        else:  # Tie: use crowding distance
+            if crowding_distances[a] > crowding_distances[b]:
+                selected_indices[i] = a
+            else:
+                selected_indices[i] = b
+
+    return selected_indices
+
+@jit(nopython=True)
+def crossover(population, num_vars, crossover_prob, lower_bounds, upper_bounds):
+    """
+    Perform crossover operation on the population.
+    
+    Parameters:
+    - population: The current population of individuals.
+    - num_vars: Number of variables in each individual.
+    - crossover_prob: Probability of crossover.
+    - lower_bounds: Lower bounds for each variable.
+    - upper_bounds: Upper bounds for each variable.
+    
+    Returns:
+    - child_population: The new population after crossover.
+    """
+    n_pop = population.shape[0]
+    cross_probability = np.random.random(n_pop)
+    do_cross = cross_probability < crossover_prob
+    R = np.random.randint(0, n_pop, (n_pop, 2))
+    parents = R[do_cross]
+    cross_point = np.random.randint(1, num_vars, len(parents))
+    child_population = population.copy()
+
+    for i in range(len(parents)):
+        parent1, parent2 = parents[i]
+        point = cross_point[i]
+        # Concatenate parts of parents to create offspring
+        child = np.concatenate((population[parent1, :point], population[parent2, point:]))
+
+        # Update the population with the newly generated child
+        for j in range(num_vars):
+            child_population[do_cross][i, j] = min(max(child[j], lower_bounds[j]), upper_bounds[j])
+
+    return child_population
+
+@jit(nopython=True)
+def polynomial_mutation(population, mutation_rate, num_vars, lower_bounds, upper_bounds, eta_mut=20):
+    """
+    Perform polynomial mutation on the population.
+    
+    Parameters:
+    - population: The current population of individuals.
+    - mutation_rate: Probability of mutation.
+    - num_vars: Number of variables in each individual.
+    - lower_bounds: Lower bounds for each variable.
+    - upper_bounds: Upper bounds for each variable.
+    - eta_mut: Mutation parameter (default is 20).
+    
+    Returns:
+    - Y: The new population after mutation.
+    """
+    X = population.copy()
+    Y = np.full(X.shape, np.inf)
+    do_mutation = np.random.random(X.shape) < mutation_rate
+    Y[:, :] = X
+
+    for i in range(len(population)):
+        for j in range(num_vars):
+            if do_mutation[i, j]:
+                xl = lower_bounds[j]
+                xu = upper_bounds[j]
+                x = X[i, j]
+
+                delta1 = (x - xl) / (xu - xl)
+                delta2 = (xu - x) / (xu - xl)
+                mut_pow = 1.0 / (eta_mut + 1.0)
+                rand = np.random.random()
+
+                if rand <= 0.5:
+                    xy = 1.0 - delta1
+                    val = 2.0 * rand + (1.0 - 2.0 * rand) * (xy ** (eta_mut + 1.0))
+                    deltaq = (val ** mut_pow) - 1.0
+                else:
+                    xy = 1.0 - delta2
+                    val = 2.0 * (1.0 - rand) + 2.0 * (rand - 0.5) * (xy ** (eta_mut + 1.0))
+                    deltaq = 1.0 - (val ** mut_pow)
+
+                mutated_value = x + deltaq * (xu - xl)
+                mutated_value = max(xl, min(mutated_value, xu))
+                Y[i, j] = mutated_value
+
+    return Y
+
+@jit(nopython=True)
 def euclidean_distances(X):
-    # Utilizando broadcasting para calcular a matriz de distâncias de forma vetorizada
+    """
+    Calculate the Euclidean distances between individuals in a population.
+    
+    Parameters:
+    - X: The population for which distances are calculated.
+    
+    Returns:
+    - dist: A matrix of pairwise Euclidean distances between individuals.
+    """
+    # Using broadcasting to calculate the distance matrix efficiently
     diff = X[:, np.newaxis, :] - X[np.newaxis, :, :]
     dist = np.sqrt(np.sum(diff**2, axis=2))
-    np.fill_diagonal(dist, np.inf)  # Evitar divisão por zero para a própria distância
-    return dist
-
-@numba.jit(nopython=True)
-def random_permutation(n):
-    indices = np.arange(n)
-    for i in range(n - 1, 0, -1):
-        j = np.random.randint(0, i + 1)
-        indices[i], indices[j] = indices[j], indices[i]
-    return indices
-
-@numba.jit(nopython=True)
-def remove_identical_solutions(population, objectives):
-    n = population.shape[0]
-    keep = np.ones(n, dtype=numba.boolean)  # Array para marcar elementos únicos
-    
-    # Comparar cada par de soluções
-    for i in range(n):
-        for j in range(i + 1, n):
-            if keep[j] and np.all(population[i] == population[j]):
-                keep[j] = False  # Marcar como falso se for duplicado
-
-    # Filtrar e retornar apenas as soluções únicas
-    return population[keep], objectives[keep]
-
-@numba.jit(nopython=True)
-def euclidean_distances2(X):
-    first_element = X[0]
-    diff = X - first_element
-    dist = np.sqrt(np.sum(diff**2, axis=1))
+    np.fill_diagonal(dist, 1e+12)  # Avoid division by zero for self-distances
     return dist

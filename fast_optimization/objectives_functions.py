@@ -1,5 +1,4 @@
 from .metrics import *
-from numba import jit
 
 def multi_obj_indexes(metrics):
     metrics_name_list, _ = backtot()
@@ -12,25 +11,29 @@ def multi_obj_indexes(metrics):
 
     return idx
 
+# @jit
 def multi_obj_func(evaluation, simulation, indexes):
     _, mask = backtot()
     likes = []
     for i in indexes:
         if mask[i]:
-            likes.append(opt[i](evaluation, simulation))
+            likes.append(opt(i, evaluation, simulation))
         else:
-            likes.append(1 - opt[i](evaluation, simulation))
+            likes.append(1 - opt(i, evaluation, simulation))
     
     return likes
 
+def select_best_solution(objectives):
+    # Normalizar os objetivos
+    min_values = np.min(objectives, axis=0)
+    max_values = np.max(objectives, axis=0)
+    normalized_objectives = (objectives - min_values) / (max_values - min_values)
 
-@jit(nopython=True)
-def obj_func(evaluation, simulation, indexes):
-    _, mask = backtot()
-    likes = np.zeros(len(indexes))
-    for i, idx in enumerate(indexes):
-        if mask[idx]:
-            likes[i]= opt(idx, evaluation, simulation)
-        else:
-            likes[i]= 1 - opt(idx, evaluation, simulation)
-    return likes
+    # Calcular a soma ponderada (pesos iguais para todos os objetivos)
+    weights = np.ones(objectives.shape[1]) / objectives.shape[1]
+    weighted_sum = np.dot(normalized_objectives, weights)
+
+    # Selecionar a solução com o menor valor da soma ponderada
+    best_index = np.argmin(weighted_sum)
+    
+    return best_index, weighted_sum[best_index]

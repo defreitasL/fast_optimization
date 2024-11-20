@@ -223,7 +223,7 @@ def decomposed_mse(evaluation, simulation):
 
     return decomposed_mse
 
-@jit(nopython=True)
+# @jit
 def backtot():
     metrics_name_list = [
         'mss',                      #Max Mielke Skill Score (MSS) ok
@@ -269,52 +269,52 @@ def backtot():
 
     return metrics_name_list, mask
 
-@jit(nopython=True)
+# @jit(nopython=True)
 def opt(index, evaluation, simulation):
 
     if index == 0:
         out = mielke_skill_score(evaluation, simulation)
-        if np.isnan(out) or out < 0:
+        if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 1:
         out = nashsutcliffe(evaluation, simulation)
-        if np.isnan(out) or out < 0:
+        if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 2:
         out = lognashsutcliffe(evaluation, simulation)
-        if np.isnan(out) or out < 0:
+        if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 3:
         out = pearson(evaluation, simulation)
-        if np.isnan(out) or out < 0:
+        if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 4:
         out = spearman(evaluation, simulation)
-        if np.isnan(out) or out < 0:
+        if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 5:
         out = agreementindex(evaluation, simulation)
-        if np.isnan(out) or out < 0:
+        if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 6:
         out = kge(evaluation, simulation)
-        if np.isnan(out) or out < 0:
+        if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 7:
         out = npkge(evaluation, simulation)
-        if np.isnan(out) or out < 0:
+        if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 8:
         out = log_p(evaluation, simulation)
-        if np.isnan(out) or out < 0:
+        if np.isnan(out):# or out < 0:
             return -999
         return out
     elif index == 9:
