@@ -7,3 +7,4 @@ from .SPEA2 import spea2_algorithm
 from .NSGAII import nsgaii_algorithm_ts
 from .SCE_UA import sce_ua_algorithm
 from .SimulatedAnnealing import simulated_annealing
+from .config_models import config_cal
