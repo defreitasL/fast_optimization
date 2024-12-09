@@ -2,7 +2,7 @@ import numpy as np
 from numba import jit
 from .objectives_functions import multi_obj_func
 
-def sce_ua_algorithm(model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, regeneration_rate, eta_mut, num_complexes, kstop, pcento, peps, index_metrics):
+def sce_ua_algorithm(model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, regeneration_rate, eta_mut, num_complexes, kstop, pcento, peps, index_metrics, n_restarts=5):
     """
     SCE-UA Optimization Algorithm (Adapted to Python).
     This algorithm aims to optimize an objective function by evolving a population using complex-based partitioning and evolving each complex.
@@ -29,152 +29,159 @@ def sce_ua_algorithm(model_simulation, Obs, initialize_population, num_generatio
     - best_fitness_history: History of the best fitness values over generations.
     """
 
-    # Initialize the population
-    population, lower_bounds, upper_bounds = initialize_population(population_size)
-    num_params = population.shape[1]
-
-    # Evaluate initial population
-    fitness_values = np.array([multi_obj_func(Obs, model_simulation(ind), index_metrics)[0] for ind in population])
-
-    # Number of individuals to regenerate each generation
-    num_to_regenerate = int(np.ceil(regeneration_rate * population_size))
-
-    # Archive to store the best solutions found
-    archive = []
     best_solution = None
     best_fitness = np.inf
 
     print('Precompilation done!')
-    print("Starting SCE-UA algorithm...")
+    print(f'Starting SCE-UA algorithm with {n_restarts} restarts...')
 
-    # Main loop
-    best_fitness_history = []
-    best_individuals = []
-    for generation in range(num_generations):
-        # Adaptively adjust alpha and beta based on generation progress
-        alpha = 1.3 - (0.9 * (generation / num_generations))  # Decreases over generations for controlled exploration
-        beta = 0.5 + (0.3 * (generation / num_generations))  # Increases for more refined contraction
 
-        # Shuffle the population
-        indices = np.random.permutation(population_size)
-        population = population[indices]
-        fitness_values = fitness_values[indices]
+    for i in range(n_restarts):
 
-        # Divide population into complexes
-        complex_size = population_size // num_complexes
-        for complex_index in range(num_complexes):
-            start = complex_index * complex_size
-            end = start + complex_size if complex_index != num_complexes - 1 else population_size
+        # Initialize the population
+        population, lower_bounds, upper_bounds = initialize_population(population_size)
+        num_params = population.shape[1]
 
-            complex_population = population[start:end]
-            complex_fitness = fitness_values[start:end]
+        # Evaluate initial population
+        fitness_values = np.array([multi_obj_func(Obs, model_simulation(ind), index_metrics)[0] for ind in population])
 
-            # Sort complex by fitness
-            sorted_indices = np.argsort(complex_fitness)
-            complex_population = complex_population[sorted_indices]
-            complex_fitness = complex_fitness[sorted_indices]
+        # Number of individuals to regenerate each generation
+        num_to_regenerate = int(np.ceil(regeneration_rate * population_size))
 
-            # Evolve the complex
-            for _ in range(complex_size):
-                # Select simplex by sampling the complex according to a linear probability distribution
-                probabilities = np.linspace(1, 0, complex_size)
-                probabilities /= np.sum(probabilities)
-                simplex_indices = np.random.choice(complex_size, size=num_params + 1, replace=False, p=probabilities)
-                simplex = complex_population[simplex_indices]
-                simplex_fitness = complex_fitness[simplex_indices]
+        # Archive to store the best solutions found
+        archive = []
 
-                # Attempt a reflection point
-                centroid = np.mean(simplex[:-1], axis=0)
-                worst_point = simplex[-1]
-                reflected_point = centroid + alpha * (centroid - worst_point)
-                reflected_point = np.clip(reflected_point, lower_bounds, upper_bounds)
-                reflected_fitness = multi_obj_func(Obs, model_simulation(reflected_point), index_metrics)[0]
 
-                if reflected_fitness < simplex_fitness[-1]:
-                    simplex[-1] = reflected_point
-                    simplex_fitness[-1] = reflected_fitness
-                else:
-                    # Attempt a contraction point
-                    contracted_point = centroid + beta * (worst_point - centroid)
-                    contracted_point = np.clip(contracted_point, lower_bounds, upper_bounds)
-                    contracted_fitness = multi_obj_func(Obs, model_simulation(contracted_point), index_metrics)[0]
 
-                    if contracted_fitness < simplex_fitness[-1]:
-                        simplex[-1] = contracted_point
-                        simplex_fitness[-1] = contracted_fitness
+
+        # Main loop
+        best_fitness_history = []
+        best_individuals = []
+        for generation in range(num_generations):
+            # Adaptively adjust alpha and beta based on generation progress
+            alpha = 1.3 - (0.9 * (generation / num_generations))  # Decreases over generations for controlled exploration
+            beta = 0.5 + (0.3 * (generation / num_generations))  # Increases for more refined contraction
+
+            # Shuffle the population
+            indices = np.random.permutation(population_size)
+            population = population[indices]
+            fitness_values = fitness_values[indices]
+
+            # Divide population into complexes
+            complex_size = population_size // num_complexes
+            for complex_index in range(num_complexes):
+                start = complex_index * complex_size
+                end = start + complex_size if complex_index != num_complexes - 1 else population_size
+
+                complex_population = population[start:end]
+                complex_fitness = fitness_values[start:end]
+
+                # Sort complex by fitness
+                sorted_indices = np.argsort(complex_fitness)
+                complex_population = complex_population[sorted_indices]
+                complex_fitness = complex_fitness[sorted_indices]
+
+                # Evolve the complex
+                for _ in range(complex_size):
+                    # Select simplex by sampling the complex according to a linear probability distribution
+                    probabilities = np.linspace(1, 0, complex_size)
+                    probabilities /= np.sum(probabilities)
+                    simplex_indices = np.random.choice(complex_size, size=num_params + 1, replace=False, p=probabilities)
+                    simplex = complex_population[simplex_indices]
+                    simplex_fitness = complex_fitness[simplex_indices]
+
+                    # Attempt a reflection point
+                    centroid = np.mean(simplex[:-1], axis=0)
+                    worst_point = simplex[-1]
+                    reflected_point = centroid + alpha * (centroid - worst_point)
+                    reflected_point = np.clip(reflected_point, lower_bounds, upper_bounds)
+                    reflected_fitness = multi_obj_func(Obs, model_simulation(reflected_point), index_metrics)[0]
+
+                    if reflected_fitness < simplex_fitness[-1]:
+                        simplex[-1] = reflected_point
+                        simplex_fitness[-1] = reflected_fitness
                     else:
-                        # Replace with a random point
-                        random_point, _, _ = initialize_population(1)
-                        simplex[-1] = random_point[0]
-                        simplex_fitness[-1] = multi_obj_func(Obs, model_simulation(random_point[0]), index_metrics)[0]
+                        # Attempt a contraction point
+                        contracted_point = centroid + beta * (worst_point - centroid)
+                        contracted_point = np.clip(contracted_point, lower_bounds, upper_bounds)
+                        contracted_fitness = multi_obj_func(Obs, model_simulation(contracted_point), index_metrics)[0]
 
-                # Update the complex with the evolved simplex
-                complex_population[simplex_indices] = simplex
-                complex_fitness[simplex_indices] = simplex_fitness
+                        if contracted_fitness < simplex_fitness[-1]:
+                            simplex[-1] = contracted_point
+                            simplex_fitness[-1] = contracted_fitness
+                        else:
+                            # Replace with a random point
+                            random_point, _, _ = initialize_population(1)
+                            simplex[-1] = random_point[0]
+                            simplex_fitness[-1] = multi_obj_func(Obs, model_simulation(random_point[0]), index_metrics)[0]
 
-            # Update the main population with the evolved complex
-            population[start:end] = complex_population
-            fitness_values[start:end] = complex_fitness
+                    # Update the complex with the evolved simplex
+                    complex_population[simplex_indices] = simplex
+                    complex_fitness[simplex_indices] = simplex_fitness
 
-        # Elitism: Keep the best solution found so far
-        current_best_index = np.argmin(fitness_values)
-        current_best_fitness = fitness_values[current_best_index]
-        if current_best_fitness < best_fitness:
-            best_fitness = current_best_fitness
-            best_solution = population[current_best_index]
-            archive.append((best_solution, best_fitness))
+                # Update the main population with the evolved complex
+                population[start:end] = complex_population
+                fitness_values[start:end] = complex_fitness
 
-        # Crossover operation
-        cross_prob = cross_prob * (1 - generation / num_generations)  # Gradually reduce crossover rate
-        population = crossover(population, num_params, cross_prob, lower_bounds, upper_bounds)
+            # Elitism: Keep the best solution found so far
+            current_best_index = np.argmin(fitness_values)
+            current_best_fitness = fitness_values[current_best_index]
+            if current_best_fitness < best_fitness:
+                best_fitness = current_best_fitness
+                best_solution = population[current_best_index]
+                archive.append((best_solution, best_fitness))
 
-        # Mutation operation
-        mutation_rate = mutation_rate * (1 - generation / num_generations)  # Gradually reduce mutation rate
-        population = polynomial_mutation(population, mutation_rate, num_params, lower_bounds, upper_bounds, eta_mut)
+            # Crossover operation
+            cross_prob = cross_prob * (1 - generation / num_generations)  # Gradually reduce crossover rate
+            population = crossover(population, num_params, cross_prob, lower_bounds, upper_bounds)
 
-        # Reintroduce new individuals to maintain genetic diversity
-        new_individuals, _, _ = initialize_population(num_to_regenerate)
-        new_individuals_fitness = np.array([multi_obj_func(Obs, model_simulation(ind), index_metrics)[0] for ind in new_individuals])
+            # Mutation operation
+            mutation_rate = mutation_rate * (1 - generation / num_generations)  # Gradually reduce mutation rate
+            population = polynomial_mutation(population, mutation_rate, num_params, lower_bounds, upper_bounds, eta_mut)
 
-        # Replace worst individuals with new ones
-        worst_indices = np.argsort(fitness_values)[-num_to_regenerate:]
-        population[worst_indices] = new_individuals
-        fitness_values[worst_indices] = new_individuals_fitness
+            # Reintroduce new individuals to maintain genetic diversity
+            new_individuals, _, _ = initialize_population(num_to_regenerate)
+            new_individuals_fitness = np.array([multi_obj_func(Obs, model_simulation(ind), index_metrics)[0] for ind in new_individuals])
 
-        best_fitness_history.append(best_fitness)
-        best_individuals.append(best_solution)
+            # Replace worst individuals with new ones
+            worst_indices = np.argsort(fitness_values)[-num_to_regenerate:]
+            population[worst_indices] = new_individuals
+            fitness_values[worst_indices] = new_individuals_fitness
 
-        # Simulated annealing: Accept worse solutions with decreasing probability
-        temperature = max(0.1, (1 - generation / num_generations))  # Temperature decreases over time
-        if np.random.rand() < temperature:
-            random_index = np.random.randint(population_size)
-            random_solution = population[random_index]
-            random_fitness = multi_obj_func(Obs, model_simulation(random_solution), index_metrics)[0]
-            if random_fitness < best_fitness:
-                best_fitness = random_fitness
-                best_solution = random_solution
+            best_fitness_history.append(best_fitness)
+            best_individuals.append(best_solution)
 
-        # Check convergence based on improvement criteria or parameter space convergence
-        if generation > kstop:
-            recent_improvement = (best_fitness_history[-kstop] - best_fitness) / abs(best_fitness_history[-kstop])
-            if recent_improvement < pcento:
-                print(f"Converged at generation {generation} based on improvement criteria.")
+            # Simulated annealing: Accept worse solutions with decreasing probability
+            temperature = max(0.1, (1 - generation / num_generations))  # Temperature decreases over time
+            if np.random.rand() < temperature:
+                random_index = np.random.randint(population_size)
+                random_solution = population[random_index]
+                random_fitness = multi_obj_func(Obs, model_simulation(random_solution), index_metrics)[0]
+                if random_fitness < best_fitness:
+                    best_fitness = random_fitness
+                    best_solution = random_solution
+
+            # Check convergence based on improvement criteria or parameter space convergence
+            if generation > kstop:
+                recent_improvement = (best_fitness_history[-kstop] - best_fitness) / abs(best_fitness_history[-kstop])
+                if recent_improvement < pcento:
+                    print(f"Converged at generation {generation} based on improvement criteria.")
+                    break
+
+            gnrng = np.exp(np.mean(np.log((np.max(population, axis=0) - np.min(population, axis=0)) / (upper_bounds - lower_bounds))))
+            if gnrng < peps:
+                print(f"Converged at generation {generation} based on parameter space convergence.")
                 break
 
-        gnrng = np.exp(np.mean(np.log((np.max(population, axis=0) - np.min(population, axis=0)) / (upper_bounds - lower_bounds))))
-        if gnrng < peps:
-            print(f"Converged at generation {generation} based on parameter space convergence.")
-            break
-
-        if generation % (num_generations // 5) == 0:
-            print(f"Generation {generation} of {num_generations} completed.")
-    
-    # Select the best final solution
-    total_objectives = np.hstack((fitness_values, np.array(best_fitness_history).flatten()))
-    total_individuals = np.vstack((population, np.array(best_individuals)))
-    best_index = np.argmin(total_objectives)
-    best_fitness = total_objectives[best_index]
-    best_individual = total_individuals[best_index]
+            if generation % (num_generations // 5) == 0:
+                print(f"Generation {generation} of {num_generations} completed.")
+        
+        # Select the best final solution
+        total_objectives = np.hstack((fitness_values, np.array(best_fitness_history).flatten()))
+        total_individuals = np.vstack((population, np.array(best_individuals)))
+        best_index = np.argmin(total_objectives)
+        best_fitness = total_objectives[best_index]
+        best_individual = total_individuals[best_index]
 
     # Return the best solution from the archive
     return best_individual, best_fitness, best_fitness_history

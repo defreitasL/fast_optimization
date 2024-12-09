@@ -3,7 +3,7 @@ from numba import jit
 import math
 from .objectives_functions import multi_obj_func, select_best_solution
 
-def nsgaii_algorithm_ts(model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, pressure, regeneration_rate, kstop, pcento, peps, index_metrics):
+def nsgaii_algorithm_ts(model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, pressure, regeneration_rate, kstop, pcento, peps, index_metrics, n_restars = 5):
     """
     NSGA-II Algorithm with Tournament Selection.
     This algorithm aims to optimize a multi-objective function using NSGA-II with tournament selection to balance between exploration and exploitation.
@@ -29,92 +29,103 @@ def nsgaii_algorithm_ts(model_simulation, Obs, initialize_population, num_genera
     - best_fitness_history: History of the best fitness values over generations.
     """
     print('Precompilation done!')
-    print('Starting NSGA-II with tournament selection algorithm...')
-    
-    # Initialize the population
-    population, lower_bounds, upper_bounds = initialize_population(population_size)
-    npar = population.shape[1]
-    nobj = len(index_metrics)
-    objectives = np.zeros((population_size, nobj))  # Objectives for multi-objective evaluation
+    print(f'Starting NSGA-II with tournament selection algorithm with {n_restars} restarts...')
 
-    # Evaluate initial population
-    for i in range(population_size):
-        simulation = model_simulation(population[i])
-        objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
+    for i in range(n_restars):
 
-    # Number of individuals to regenerate each generation
-    num_to_regenerate = int(np.ceil(regeneration_rate * population_size))
-
-    best_fitness_history = []
-    best_individuals = []
-
-    # Main loop of NSGA-II algorithm
-    for generation in range(num_generations):
-        ranks, front_indices, front_sizes = fast_non_dominated_sort(objectives)
-        crowding_distances = crowd_distance(objectives, ranks)
+        best_fitness_history = []
+        best_individuals = []
         
-        # Tournament selection with pressure
-        next_population_indices = tournament_selection_with_crowding(ranks, crowding_distances, pressure)
+        # Initialize the population
+        population, lower_bounds, upper_bounds = initialize_population(population_size)
+        npar = population.shape[1]
+        nobj = len(index_metrics)
+        objectives = np.zeros((population_size, nobj))  # Objectives for multi-objective evaluation
 
-        # Create mating pool and generate the next generation
-        mating_pool = population[next_population_indices.astype(np.int32)]
-        
-        # Crossover operation
-        min_cross_prob = 0.1  # Minimum crossover probability to maintain diversity
-        adaptive_cross_prob = max(cross_prob * (1 - generation / num_generations), min_cross_prob)
-        offspring = crossover(mating_pool, npar, adaptive_cross_prob, lower_bounds, upper_bounds)
-        
-        # Mutation operation
-        min_mutation_rate = 0.01  # Minimum mutation rate to prevent premature convergence
-        adaptive_mutation_rate = max(mutation_rate * (1 - generation / num_generations), min_mutation_rate)
-        offspring = polynomial_mutation(offspring, adaptive_mutation_rate, npar, lower_bounds, upper_bounds)
-
-        # Reintroduce new individuals to maintain genetic diversity
-        new_individuals, _, _ = initialize_population(num_to_regenerate)
-        offspring = np.vstack((offspring, new_individuals))
-
-        # Evaluate the new offspring population
-        new_objectives = np.zeros_like(objectives)
+        # Evaluate initial population
         for i in range(population_size):
-            simulation = model_simulation(offspring[i])
-            new_objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
+            simulation = model_simulation(population[i])
+            objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
 
-        # Prepare the next generation
-        population = offspring
-        objectives = new_objectives
+        # Number of individuals to regenerate each generation
+        num_to_regenerate = int(np.ceil(regeneration_rate * population_size))
 
-        # Early stopping based on improvement criteria
-        ii = select_best_solution(objectives)[0]
-        current_best_fitness = objectives[ii]
-        best_fitness_history.append(current_best_fitness)
-        best_individuals.append(population[ii])
+        # Main loop of NSGA-II algorithm
+        for generation in range(num_generations):
+            ranks, front_indices, front_sizes = fast_non_dominated_sort(objectives)
+            crowding_distances = crowd_distance(objectives, ranks)
+            
+            # Tournament selection with pressure
+            next_population_indices = tournament_selection_with_crowding(ranks, crowding_distances, pressure)
 
-        if generation > kstop:
-            # Normalize objectives for proper comparison
-            normalized_objectives = (objectives - objectives.min(axis=0)) / (objectives.max(axis=0) - objectives.min(axis=0) + 1e-10)
-            mean_normalized_fitness = np.mean(np.sum(normalized_objectives, axis=1))
-            previous_mean_fitness = np.mean(np.sum((best_fitness_history[-kstop]), axis=0)) if len(best_fitness_history) >= kstop else mean_normalized_fitness
-            recent_improvement = (previous_mean_fitness - mean_normalized_fitness) / abs(previous_mean_fitness)
-            if recent_improvement < pcento:
-                print(f"Converged at generation {generation} based on improvement criteria.")
+            # Create mating pool and generate the next generation
+            mating_pool = population[next_population_indices.astype(np.int32)]
+            
+            # Crossover operation
+            min_cross_prob = 0.1  # Minimum crossover probability to maintain diversity
+            adaptive_cross_prob = max(cross_prob * (1 - generation / num_generations), min_cross_prob)
+            offspring = crossover(mating_pool, npar, adaptive_cross_prob, lower_bounds, upper_bounds)
+            
+            # Mutation operation
+            min_mutation_rate = 0.01  # Minimum mutation rate to prevent premature convergence
+            adaptive_mutation_rate = max(mutation_rate * (1 - generation / num_generations), min_mutation_rate)
+            offspring = polynomial_mutation(offspring, adaptive_mutation_rate, npar, lower_bounds, upper_bounds)
+
+            # Reintroduce new individuals to maintain genetic diversity
+            new_individuals, _, _ = initialize_population(num_to_regenerate)
+            offspring = np.vstack((offspring, new_individuals))
+
+            # Evaluate the new offspring population
+            new_objectives = np.zeros_like(objectives)
+            for i in range(population_size):
+                simulation = model_simulation(offspring[i])
+                new_objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
+
+            # Prepare the next generation
+            population = offspring
+            objectives = new_objectives
+
+            # Early stopping based on improvement criteria
+            ii = select_best_solution(objectives)[0]
+            current_best_fitness = objectives[ii]
+            best_fitness_history.append(current_best_fitness)
+            best_individuals.append(population[ii])
+
+            if generation > kstop:
+                # Normalize objectives for proper comparison
+                normalized_objectives = (objectives - objectives.min(axis=0)) / (objectives.max(axis=0) - objectives.min(axis=0) + 1e-10)
+                mean_normalized_fitness = np.mean(np.sum(normalized_objectives, axis=1))
+                previous_mean_fitness = np.mean(np.sum((best_fitness_history[-kstop]), axis=0)) if len(best_fitness_history) >= kstop else mean_normalized_fitness
+                recent_improvement = (previous_mean_fitness - mean_normalized_fitness) / abs(previous_mean_fitness)
+                if recent_improvement < pcento:
+                    print(f"Converged at generation {generation} based on improvement criteria.")
+                    break
+
+            # Early stopping based on parameter space convergence
+            epsilon = 1e-10
+            gnrng = np.exp(np.mean(np.log((np.max(population, axis=0) - np.min(population, axis=0) + epsilon) / (upper_bounds - lower_bounds))))
+            if gnrng < peps:
+                print(f"Converged at generation {generation} based on parameter space convergence.")
                 break
 
-        # Early stopping based on parameter space convergence
-        epsilon = 1e-10
-        gnrng = np.exp(np.mean(np.log((np.max(population, axis=0) - np.min(population, axis=0) + epsilon) / (upper_bounds - lower_bounds))))
-        if gnrng < peps:
-            print(f"Converged at generation {generation} based on parameter space convergence.")
-            break
+            if generation % (num_generations // 50) == 0:
+                print(f"Generation {generation} of {num_generations} completed")
 
-        if generation % (num_generations // 50) == 0:
-            print(f"Generation {generation} of {num_generations} completed")
-
-    # Select the best final solution
-    total_objectives = np.vstack((objectives, np.array(best_fitness_history)))
-    total_individuals = np.vstack((population, np.array(best_individuals)))
-    best_index = select_best_solution(total_objectives)[0]
-    best_fitness = total_objectives[best_index]
-    best_individual = total_individuals[best_index]
+        # Select the best final solution
+        if i == 0:
+            total_objectives = np.vstack((objectives, np.array(best_fitness_history)))
+            total_individuals = np.vstack((population, np.array(best_individuals)))
+            best_index = select_best_solution(total_objectives)[0]
+            best_fitness = total_objectives[best_index]
+            best_individual = total_individuals[best_index]
+        else:
+            total_objectives = np.vstack((objectives, np.array(best_fitness_history)))
+            total_individuals = np.vstack((population, np.array(best_individuals)))
+            total_objectives = np.vstack((total_objectives, np.array([best_fitness])))
+            total_individuals = np.vstack((total_individuals, np.array([best_individual])))
+            best_index = select_best_solution(total_objectives)[0]
+            best_fitness = total_objectives[best_index]
+            best_individual = total_individuals[best_index]
 
     return best_individual, best_fitness, best_fitness_history
 

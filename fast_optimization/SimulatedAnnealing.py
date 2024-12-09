@@ -2,7 +2,7 @@ import numpy as np
 import copy
 from .objectives_functions import multi_obj_func
 
-def simulated_annealing(model_simulation, Obs, initialize_population, max_iterations, initial_temperature, cooling_rate, index_metrics, n_restarts=10):
+def simulated_annealing(model_simulation, Obs, initialize_population, max_iterations, initial_temperature, cooling_rate, index_metrics, n_restarts=5):
     """
     Simulated Annealing Optimization Algorithm.
     This algorithm aims to find an optimal solution by probabilistically accepting worse solutions to escape local optima.
@@ -21,8 +21,10 @@ def simulated_annealing(model_simulation, Obs, initialize_population, max_iterat
     - best_fitness: Fitness value of the best solution.
     - fitness_history: History of the best fitness values over iterations.
     """
+    print(f'Starting Simulated Annealing optimization with {n_restarts} restarts...')
 
     best_solution = None
+    best_fitness = None
 
     for i in range(n_restarts):
 
@@ -51,7 +53,6 @@ def simulated_annealing(model_simulation, Obs, initialize_population, max_iterat
         fitness_history = [best_fitness.tolist()]
         temperature = initial_temperature
 
-        print('Starting Simulated Annealing optimization...')
 
         # Main loop
         for iteration in range(max_iterations):

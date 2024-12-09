@@ -3,7 +3,7 @@ from numba import jit
 import math
 from .objectives_functions import multi_obj_func, select_best_solution
 
-def spea2_algorithm(model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, pressure, regeneration_rate, m, eta_mut, kstop, pcento, peps, index_metrics):
+def spea2_algorithm(model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, pressure, regeneration_rate, m, eta_mut, kstop, pcento, peps, index_metrics, n_restarts = 5):
     """
     SPEA2 Optimization Algorithm (Adapted to Python).
     This algorithm aims to optimize an objective function by evolving a population using environmental selection and genetic operations.
@@ -30,121 +30,133 @@ def spea2_algorithm(model_simulation, Obs, initialize_population, num_generation
     - best_fitness: Fitness value of the best solution.
     - best_fitness_history: History of the best fitness values over generations.
     """
-    
-    # Initialize the population
-    population, lb, ub = initialize_population(population_size)
-    npar = population.shape[1]
-    n_obj = len(index_metrics)
-    objectives = np.zeros((population_size, n_obj))
-
-    # Evaluate initial population
-    for i in range(population_size):
-        simulation = model_simulation(population[i])
-        objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
-
     print('Precompilation done!')
-    print('Starting SPEA2 algorithm...')
+    print(f'Starting SPEA2 algorithm with {n_restarts} restarts...')
 
-    # Number of individuals to regenerate each generation
-    num_to_regenerate = int(np.ceil(regeneration_rate * population_size))
+    for i in range(n_restarts):
 
-    best_fitness_history = []
-    best_individuals = []
+        best_fitness_history = []
+        best_individuals = []
+        # Initialize the population
+        population, lb, ub = initialize_population(population_size)
+        npar = population.shape[1]
+        n_obj = len(index_metrics)
+        objectives = np.zeros((population_size, n_obj))
 
-    # Main loop of the SPEA2 algorithm
-    for generation in range(num_generations):
-        # Environmental selection and archive generation
-        archive, archive_fitness, archive_objectives = environmental_selection(population, objectives, m)
+        # Evaluate initial population
+        for i in range(population_size):
+            simulation = model_simulation(population[i])
+            objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
 
-        # Prevent empty archive
-        if len(archive) == 0:
-            sorted_indices = np.argsort(archive_fitness)
-            archive = population[sorted_indices[:1], :]
-            archive_objectives = objectives[sorted_indices[:1], :]
-            archive_fitness = archive_fitness[sorted_indices[:1]]
 
-        # Limit archive size to population size
-        if len(archive) > population_size:
-            archive_indices = np.argsort(archive_fitness)[:population_size]
-            archive = archive[archive_indices]
-            archive_objectives = archive_objectives[archive_indices]
-            archive_fitness = archive_fitness[archive_indices]
-        
-        # Parent selection and reproduction
-        ranks = np.argsort(archive_fitness)  # Update ranks based on fitness
-        crowding_distances = crowd_distance(archive_objectives, ranks)
-        pool_indexes = tournament_selection_with_crowding(ranks, crowding_distances, pressure)
-        mating_pool = archive[pool_indexes]
-        
-        # Crossover operation
-        min_cross_prob = 0.1  # Set a minimum crossover probability to maintain diversity
-        adaptive_cross_prob = max(cross_prob * (1 - generation / num_generations), min_cross_prob)
-        offspring = crossover(mating_pool, npar, adaptive_cross_prob, lb, ub)
-        
-        # Mutation operation
-        min_mutation_rate = 0.01  # Set a minimum mutation rate to prevent premature convergence
-        adaptive_mutation_rate = max(mutation_rate * (1 - generation / num_generations), min_mutation_rate)
-        offspring = polynomial_mutation(offspring, adaptive_mutation_rate, npar, lb, ub, eta_mut)
 
-        # Evaluate offspring
-        offspring_objectives = np.zeros((len(offspring), n_obj))
-        for i in range(len(offspring)):
-            simulation = model_simulation(offspring[i])
-            offspring_objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
+        # Number of individuals to regenerate each generation
+        num_to_regenerate = int(np.ceil(regeneration_rate * population_size))
 
-        # Reintroduce new individuals to maintain genetic diversity
-        new_individuals, _, _ = initialize_population(num_to_regenerate)
-        new_individuals_objectives = np.zeros((num_to_regenerate, n_obj))
-        for i in range(num_to_regenerate):
-            simulation = model_simulation(new_individuals[i])
-            new_individuals_objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
 
-        population = np.vstack((archive, offspring, new_individuals))
-        objectives = np.vstack((archive_objectives, offspring_objectives, new_individuals_objectives))
+        # Main loop of the SPEA2 algorithm
+        for generation in range(num_generations):
+            # Environmental selection and archive generation
+            archive, archive_fitness, archive_objectives = environmental_selection(population, objectives, m)
 
-        # Ensure the population size is correct
-        if len(population) < population_size:
-            additional_pop, _, _ = initialize_population(population_size - len(population))
-            additional_obj = np.zeros((population_size - len(population), n_obj))
-            for i in range(len(additional_pop)):
-                simulation = model_simulation(additional_pop[i])
-                additional_obj[i] = multi_obj_func(Obs, simulation, index_metrics)
+            # Prevent empty archive
+            if len(archive) == 0:
+                sorted_indices = np.argsort(archive_fitness)
+                archive = population[sorted_indices[:1], :]
+                archive_objectives = objectives[sorted_indices[:1], :]
+                archive_fitness = archive_fitness[sorted_indices[:1]]
 
-            population = np.vstack((population, additional_pop))
-            objectives = np.vstack((objectives, additional_obj))
+            # Limit archive size to population size
+            if len(archive) > population_size:
+                archive_indices = np.argsort(archive_fitness)[:population_size]
+                archive = archive[archive_indices]
+                archive_objectives = archive_objectives[archive_indices]
+                archive_fitness = archive_fitness[archive_indices]
+            
+            # Parent selection and reproduction
+            ranks = np.argsort(archive_fitness)  # Update ranks based on fitness
+            crowding_distances = crowd_distance(archive_objectives, ranks)
+            pool_indexes = tournament_selection_with_crowding(ranks, crowding_distances, pressure)
+            mating_pool = archive[pool_indexes]
+            
+            # Crossover operation
+            min_cross_prob = 0.1  # Set a minimum crossover probability to maintain diversity
+            adaptive_cross_prob = max(cross_prob * (1 - generation / num_generations), min_cross_prob)
+            offspring = crossover(mating_pool, npar, adaptive_cross_prob, lb, ub)
+            
+            # Mutation operation
+            min_mutation_rate = 0.01  # Set a minimum mutation rate to prevent premature convergence
+            adaptive_mutation_rate = max(mutation_rate * (1 - generation / num_generations), min_mutation_rate)
+            offspring = polynomial_mutation(offspring, adaptive_mutation_rate, npar, lb, ub, eta_mut)
 
-        # Early stopping based on improvement criteria
-        ii = select_best_solution(objectives)[0]
-        current_best_fitness = objectives[ii]
-        best_fitness_history.append(current_best_fitness)
-        best_individuals.append(population[ii])
+            # Evaluate offspring
+            offspring_objectives = np.zeros((len(offspring), n_obj))
+            for i in range(len(offspring)):
+                simulation = model_simulation(offspring[i])
+                offspring_objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
 
-        if generation > kstop:
-            # Normalize objectives for proper comparison
-            normalized_objectives = (objectives - objectives.min(axis=0)) / (objectives.max(axis=0) - objectives.min(axis=0) + 1e-10)
-            mean_normalized_fitness = np.mean(np.sum(normalized_objectives, axis=1))
-            previous_mean_fitness = np.mean(np.sum((best_fitness_history[-kstop]), axis=0)) if len(best_fitness_history) >= kstop else mean_normalized_fitness
-            recent_improvement = (previous_mean_fitness - mean_normalized_fitness) / abs(previous_mean_fitness)
-            if recent_improvement < pcento:
-                print(f"Converged at generation {generation} based on improvement criteria.")
+            # Reintroduce new individuals to maintain genetic diversity
+            new_individuals, _, _ = initialize_population(num_to_regenerate)
+            new_individuals_objectives = np.zeros((num_to_regenerate, n_obj))
+            for i in range(num_to_regenerate):
+                simulation = model_simulation(new_individuals[i])
+                new_individuals_objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
+
+            population = np.vstack((archive, offspring, new_individuals))
+            objectives = np.vstack((archive_objectives, offspring_objectives, new_individuals_objectives))
+
+            # Ensure the population size is correct
+            if len(population) < population_size:
+                additional_pop, _, _ = initialize_population(population_size - len(population))
+                additional_obj = np.zeros((population_size - len(population), n_obj))
+                for i in range(len(additional_pop)):
+                    simulation = model_simulation(additional_pop[i])
+                    additional_obj[i] = multi_obj_func(Obs, simulation, index_metrics)
+
+                population = np.vstack((population, additional_pop))
+                objectives = np.vstack((objectives, additional_obj))
+
+            # Early stopping based on improvement criteria
+            ii = select_best_solution(objectives)[0]
+            current_best_fitness = objectives[ii]
+            best_fitness_history.append(current_best_fitness)
+            best_individuals.append(population[ii])
+
+            if generation > kstop:
+                # Normalize objectives for proper comparison
+                normalized_objectives = (objectives - objectives.min(axis=0)) / (objectives.max(axis=0) - objectives.min(axis=0) + 1e-10)
+                mean_normalized_fitness = np.mean(np.sum(normalized_objectives, axis=1))
+                previous_mean_fitness = np.mean(np.sum((best_fitness_history[-kstop]), axis=0)) if len(best_fitness_history) >= kstop else mean_normalized_fitness
+                recent_improvement = (previous_mean_fitness - mean_normalized_fitness) / abs(previous_mean_fitness)
+                if recent_improvement < pcento:
+                    print(f"Converged at generation {generation} based on improvement criteria.")
+                    break
+
+            # Early stopping based on parameter space convergence
+            epsilon = 1e-10
+            gnrng = np.exp(np.mean(np.log((np.max(population, axis=0) - np.min(population, axis=0) + epsilon) / (ub - lb))))
+            if gnrng < peps:
+                print(f"Converged at generation {generation} based on parameter space convergence.")
                 break
 
-        # Early stopping based on parameter space convergence
-        epsilon = 1e-10
-        gnrng = np.exp(np.mean(np.log((np.max(population, axis=0) - np.min(population, axis=0) + epsilon) / (ub - lb))))
-        if gnrng < peps:
-            print(f"Converged at generation {generation} based on parameter space convergence.")
-            break
-
-        if generation % (num_generations // 50) == 0:
-            print(f"Generation {generation} of {num_generations} completed")
+            if generation % (num_generations // 50) == 0:
+                print(f"Generation {generation} of {num_generations} completed")
     
-    # Select the best final solution
-    total_objectives = np.vstack((objectives, np.array(best_fitness_history)))
-    total_individuals = np.vstack((population, np.array(best_individuals)))
-    best_index = select_best_solution(total_objectives)[0]
-    best_fitness = total_objectives[best_index]
-    best_individual = total_individuals[best_index]
+        # Select the best final solution
+        if i == 0:
+            total_objectives = np.vstack((objectives, np.array(best_fitness_history)))
+            total_individuals = np.vstack((population, np.array(best_individuals)))
+            best_index = select_best_solution(total_objectives)[0]
+            best_fitness = total_objectives[best_index]
+            best_individual = total_individuals[best_index]
+        else:
+            total_objectives = np.vstack((objectives, np.array(best_fitness_history)))
+            total_individuals = np.vstack((population, np.array(best_individuals)))
+            total_objectives = np.vstack((total_objectives, np.array([best_fitness])))
+            total_individuals = np.vstack((total_individuals, np.array([best_individual])))
+            best_index = select_best_solution(total_objectives)[0]
+            best_fitness = total_objectives[best_index]
+            best_individual = total_individuals[best_index]
 
     return best_individual, best_fitness, best_fitness_history
 
