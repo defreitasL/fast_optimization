@@ -31,7 +31,7 @@ def nsgaii_algorithm_ts(model_simulation, Obs, initialize_population, num_genera
     print('Precompilation done!')
     print(f'Starting NSGA-II with tournament selection algorithm with {n_restars} restarts...')
 
-    for i in range(n_restars):
+    for restart in range(n_restars):
 
         best_fitness_history = []
         best_individuals = []
@@ -112,7 +112,7 @@ def nsgaii_algorithm_ts(model_simulation, Obs, initialize_population, num_genera
                 print(f"Generation {generation} of {num_generations} completed")
 
         # Select the best final solution
-        if i == 0:
+        if restart == 0:
             total_objectives = np.vstack((objectives, np.array(best_fitness_history)))
             total_individuals = np.vstack((population, np.array(best_individuals)))
             best_index = select_best_solution(total_objectives)[0]

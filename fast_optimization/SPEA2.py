@@ -33,7 +33,7 @@ def spea2_algorithm(model_simulation, Obs, initialize_population, num_generation
     print('Precompilation done!')
     print(f'Starting SPEA2 algorithm with {n_restarts} restarts...')
 
-    for i in range(n_restarts):
+    for restart in range(n_restarts):
 
         best_fitness_history = []
         best_individuals = []
@@ -143,7 +143,7 @@ def spea2_algorithm(model_simulation, Obs, initialize_population, num_generation
                 print(f"Generation {generation} of {num_generations} completed")
     
         # Select the best final solution
-        if i == 0:
+        if restart == 0:
             total_objectives = np.vstack((objectives, np.array(best_fitness_history)))
             total_individuals = np.vstack((population, np.array(best_individuals)))
             best_index = select_best_solution(total_objectives)[0]
