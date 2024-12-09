@@ -38,6 +38,11 @@ def sce_ua_algorithm(model_simulation, Obs, initialize_population, num_generatio
 
     for i in range(n_restarts):
 
+        if i == 0:
+            print(f'Starting {i+1}/{n_restarts}')
+        else:
+            print(f'Restart {i+1}/{n_restarts}')
+
         # Initialize the population
         population, lower_bounds, upper_bounds = initialize_population(population_size)
         num_params = population.shape[1]
@@ -173,7 +178,7 @@ def sce_ua_algorithm(model_simulation, Obs, initialize_population, num_generatio
                 print(f"Converged at generation {generation} based on parameter space convergence.")
                 break
 
-            if generation % (num_generations // (num_generations/20)) == 0:
+            if generation % (num_generations // (num_generations/10)) == 0:
                 print(f"Generation {generation} of {num_generations} completed.")
         
         # Select the best final solution

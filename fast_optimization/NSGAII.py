@@ -3,7 +3,7 @@ from numba import jit
 import math
 from .objectives_functions import multi_obj_func, select_best_solution
 
-def nsgaii_algorithm_ts(model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, pressure, regeneration_rate, kstop, pcento, peps, index_metrics, n_restars = 5):
+def nsgaii_algorithm_ts(model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, pressure, regeneration_rate, kstop, pcento, peps, index_metrics, n_restarts = 5):
     """
     NSGA-II Algorithm with Tournament Selection.
     This algorithm aims to optimize a multi-objective function using NSGA-II with tournament selection to balance between exploration and exploitation.
@@ -29,9 +29,14 @@ def nsgaii_algorithm_ts(model_simulation, Obs, initialize_population, num_genera
     - best_fitness_history: History of the best fitness values over generations.
     """
     print('Precompilation done!')
-    print(f'Starting NSGA-II with tournament selection algorithm with {n_restars} restarts...')
+    print(f'Starting NSGA-II with tournament selection algorithm with {n_restarts} restarts...')
 
-    for restart in range(n_restars):
+    for restart in range(n_restarts):
+        
+        if restart == 0:
+            print(f'Starting {i+1}/{n_restarts}')
+        else:
+            print(f'Restart {i+1}/{n_restarts}')
 
         best_fitness_history = []
         best_individuals = []
@@ -108,7 +113,7 @@ def nsgaii_algorithm_ts(model_simulation, Obs, initialize_population, num_genera
                 print(f"Converged at generation {generation} based on parameter space convergence.")
                 break
 
-            if generation % (num_generations // (num_generations/20)) == 0:
+            if generation % (num_generations // (num_generations/10)) == 0:
                 print(f"Generation {generation} of {num_generations} completed")
 
         # Select the best final solution

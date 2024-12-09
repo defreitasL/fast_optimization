@@ -35,6 +35,11 @@ def spea2_algorithm(model_simulation, Obs, initialize_population, num_generation
 
     for restart in range(n_restarts):
 
+        if restart == 0:
+            print(f'Starting {i+1}/{n_restarts}')
+        else:
+            print(f'Restart {i+1}/{n_restarts}')
+
         best_fitness_history = []
         best_individuals = []
         # Initialize the population
