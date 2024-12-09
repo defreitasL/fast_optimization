@@ -173,7 +173,7 @@ def sce_ua_algorithm(model_simulation, Obs, initialize_population, num_generatio
                 print(f"Converged at generation {generation} based on parameter space convergence.")
                 break
 
-            if generation % (num_generations // 5) == 0:
+            if generation % (num_generations // (num_generations/20)) == 0:
                 print(f"Generation {generation} of {num_generations} completed.")
         
         # Select the best final solution
