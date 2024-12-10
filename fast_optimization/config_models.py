@@ -23,6 +23,7 @@ class config_cal(object):
             self.kstop = cfg['kstop']
             self.pcento = cfg['pcento']
             self.peps = cfg['peps']
+            self.n_restarts = cfg['n_restarts']
             self.indexes = multi_obj_indexes(self.metrics)
         elif self.cal_alg == 'SPEA2':
             self.num_generations = cfg['num_generations']
@@ -36,6 +37,7 @@ class config_cal(object):
             self.kstop = cfg['kstop']
             self.pcento = cfg['pcento']
             self.peps = cfg['peps']
+            self.n_restarts = cfg['n_restarts']
             self.indexes = multi_obj_indexes(self.metrics)
         elif self.cal_alg == 'SCE-UA':
             self.num_generations = cfg['num_generations']
@@ -49,11 +51,13 @@ class config_cal(object):
             self.kstop = cfg['kstop']
             self.pcento = cfg['pcento']
             self.peps = cfg['peps']
+            self.n_restarts = cfg['n_restarts']
             self.indexes = multi_obj_indexes(self.metrics)
         elif self.cal_alg == 'Simulated Annealing':
             self.max_iterations = cfg['max_iterations']
             self.initial_temperature = cfg['initial_temperature']
             self.cooling_rate = cfg['cooling_rate']
+            self.n_restarts = cfg['n_restarts']
             self.indexes = multi_obj_indexes(self.metrics)
         
 
@@ -75,7 +79,8 @@ class config_cal(object):
                 self.kstop,
                 self.pcento,
                 self.peps,
-                self.indexes
+                self.indexes,
+                self.n_restarts
                 )
         elif self.cal_alg == 'SPEA2':
             return spea2_algorithm(
@@ -93,7 +98,8 @@ class config_cal(object):
                 self.kstop,
                 self.pcento,
                 self.peps,
-                self.indexes)
+                self.indexes,
+                self.n_restarts)
         elif self.cal_alg == 'SCE-UA':
             return sce_ua_algorithm(
                 model.model_sim, 
@@ -109,7 +115,8 @@ class config_cal(object):
                 self.kstop,
                 self.pcento,
                 self.peps,
-                self.indexes)
+                self.indexes,
+                self.n_restarts)
         elif self.cal_alg == 'Simulated Annealing':
             return simulated_annealing(
                 model.model_sim, 
@@ -118,4 +125,5 @@ class config_cal(object):
                 self.max_iterations, 
                 self.initial_temperature, 
                 self.cooling_rate,
-                self.indexes)
+                self.indexes,
+                self.n_restarts)

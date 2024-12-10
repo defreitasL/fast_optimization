@@ -2,10 +2,11 @@ import numpy as np
 from numba import jit
 import math
 from .objectives_functions import multi_obj_func, select_best_solution
+from .metrics import backtot
 
 def spea2_algorithm(model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, pressure, regeneration_rate, m, eta_mut, kstop, pcento, peps, index_metrics, n_restarts = 5):
     """
-    SPEA2 Optimization Algorithm (Adapted to Python).
+    SPEA2 Optimization Algorithm.
     This algorithm aims to optimize an objective function by evolving a population using environmental selection and genetic operations.
     
     Parameters:
@@ -33,27 +34,26 @@ def spea2_algorithm(model_simulation, Obs, initialize_population, num_generation
     print('Precompilation done!')
     print(f'Starting SPEA2 algorithm with {n_restarts} restarts...')
 
+    metrics_name_list, mask = backtot()
+    metrics_name_list = [metrics_name_list[k] for k in index_metrics]
+    mask = [mask[k] for k in index_metrics]
+
     for restart in range(n_restarts):
 
-        if restart == 0:
-            print(f'Starting {i+1}/{n_restarts}')
-        else:
-            print(f'Restart {i+1}/{n_restarts}')
+        print(f'Starting {restart+1}/{n_restarts}')
 
         best_fitness_history = []
         best_individuals = []
         # Initialize the population
         population, lb, ub = initialize_population(population_size)
         npar = population.shape[1]
-        n_obj = len(index_metrics)
-        objectives = np.zeros((population_size, n_obj))
+        nobj = len(index_metrics)
+        objectives = np.zeros((population_size, nobj))
 
         # Evaluate initial population
         for i in range(population_size):
             simulation = model_simulation(population[i])
             objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
-
-
 
         # Number of individuals to regenerate each generation
         num_to_regenerate = int(np.ceil(regeneration_rate * population_size))
@@ -95,14 +95,14 @@ def spea2_algorithm(model_simulation, Obs, initialize_population, num_generation
             offspring = polynomial_mutation(offspring, adaptive_mutation_rate, npar, lb, ub, eta_mut)
 
             # Evaluate offspring
-            offspring_objectives = np.zeros((len(offspring), n_obj))
+            offspring_objectives = np.zeros((len(offspring), nobj))
             for i in range(len(offspring)):
                 simulation = model_simulation(offspring[i])
                 offspring_objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
 
             # Reintroduce new individuals to maintain genetic diversity
             new_individuals, _, _ = initialize_population(num_to_regenerate)
-            new_individuals_objectives = np.zeros((num_to_regenerate, n_obj))
+            new_individuals_objectives = np.zeros((num_to_regenerate, nobj))
             for i in range(num_to_regenerate):
                 simulation = model_simulation(new_individuals[i])
                 new_individuals_objectives[i] = multi_obj_func(Obs, simulation, index_metrics)
@@ -113,7 +113,7 @@ def spea2_algorithm(model_simulation, Obs, initialize_population, num_generation
             # Ensure the population size is correct
             if len(population) < population_size:
                 additional_pop, _, _ = initialize_population(population_size - len(population))
-                additional_obj = np.zeros((population_size - len(population), n_obj))
+                additional_obj = np.zeros((population_size - len(population), nobj))
                 for i in range(len(additional_pop)):
                     simulation = model_simulation(additional_pop[i])
                     additional_obj[i] = multi_obj_func(Obs, simulation, index_metrics)
@@ -146,6 +146,12 @@ def spea2_algorithm(model_simulation, Obs, initialize_population, num_generation
 
             if generation % (num_generations // (num_generations/10)) == 0:
                 print(f"Generation {generation} of {num_generations} completed")
+                current_best_fitness
+                for j in range(nobj):
+                    if mask[j]:
+                        print(f"{metrics_name_list[j]}: {current_best_fitness[j]:.3f}")
+                    else:
+                        print(f"{metrics_name_list[j]}: {(1 - current_best_fitness[j]):.3f}")
     
         # Select the best final solution
         if restart == 0:
@@ -162,7 +168,14 @@ def spea2_algorithm(model_simulation, Obs, initialize_population, num_generation
             best_index = select_best_solution(total_objectives)[0]
             best_fitness = total_objectives[best_index]
             best_individual = total_individuals[best_index]
-
+    
+    print(f'SPEA2 with tournament selection algorithm completed after {n_restarts} restarts.')
+    print('Best fitness found:')
+    for j in range(nobj):
+        if mask[j]:
+            print(f"{metrics_name_list[j]}: {best_fitness[j]:.3f}")
+        else:
+            print(f"{metrics_name_list[j]}: {(1 - best_fitness[j]):.3f}")
     return best_individual, best_fitness, best_fitness_history
 
 @jit(nopython=True)

@@ -1,6 +1,7 @@
 import numpy as np
 import copy
 from .objectives_functions import multi_obj_func
+from .metrics import backtot
 
 def simulated_annealing(model_simulation, Obs, initialize_population, max_iterations, initial_temperature, cooling_rate, index_metrics, n_restarts=5):
     """
@@ -26,12 +27,13 @@ def simulated_annealing(model_simulation, Obs, initialize_population, max_iterat
     best_solution = None
     best_fitness = None
 
-    for i in range(n_restarts):
+    metrics_name_list, mask = backtot()
+    metric_name = [metrics_name_list[k] for k in index_metrics][0]
+    mask = [mask[k] for k in index_metrics][0]
 
-        if i == 0:
-            print(f'Starting {i+1}/{n_restarts}')
-        else:
-            print(f'Restart {i+1}/{n_restarts}')
+    for restart in range(n_restarts):
+
+        print(f'Starting {restart+1}/{n_restarts}')
 
         # Initialize population with one individual (SA works with a single solution at a time)
         population, lower_bounds, upper_bounds = initialize_population(1)
@@ -42,7 +44,7 @@ def simulated_annealing(model_simulation, Obs, initialize_population, max_iterat
         current_simulation = model_simulation(current_solution)
         current_fitness = np.array(multi_obj_func(Obs, current_simulation, index_metrics))
 
-        if i == 0:
+        if restart == 0:
             best_solution = copy.deepcopy(current_solution)
             best_fitness = current_fitness.copy()
         else:
@@ -85,7 +87,12 @@ def simulated_annealing(model_simulation, Obs, initialize_population, max_iterat
 
             # Print progress
             if iteration % (max_iterations // 100) == 0:
-                print(f"Iteration {iteration}/{max_iterations}, Best Fitness: {best_fitness}, Temperature: {temperature}")
+                if mask:
+                    print(f"Iteration {iteration}/{max_iterations},{metric_name}: {best_fitness[0]:.3f}, Temperature: {temperature}")
+                else:
+                    print(f"Iteration {iteration}/{max_iterations},{metric_name}: {(1-best_fitness[0]):.3f}, Temperature: {temperature}")
+
+
 
     return best_solution, best_fitness.tolist(), fitness_history
 

@@ -2,6 +2,7 @@ import numpy as np
 from numba import jit
 import math
 from .objectives_functions import multi_obj_func, select_best_solution
+from .metrics import backtot
 
 def nsgaii_algorithm_ts(model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, pressure, regeneration_rate, kstop, pcento, peps, index_metrics, n_restarts = 5):
     """
@@ -31,12 +32,13 @@ def nsgaii_algorithm_ts(model_simulation, Obs, initialize_population, num_genera
     print('Precompilation done!')
     print(f'Starting NSGA-II with tournament selection algorithm with {n_restarts} restarts...')
 
+    metrics_name_list, mask = backtot()
+    metrics_name_list = [metrics_name_list[k] for k in index_metrics]
+    mask = [mask[k] for k in index_metrics]
+
     for restart in range(n_restarts):
-        
-        if restart == 0:
-            print(f'Starting {i+1}/{n_restarts}')
-        else:
-            print(f'Restart {i+1}/{n_restarts}')
+
+        print(f'Starting {restart+1}/{n_restarts}')
 
         best_fitness_history = []
         best_individuals = []
@@ -115,7 +117,12 @@ def nsgaii_algorithm_ts(model_simulation, Obs, initialize_population, num_genera
 
             if generation % (num_generations // (num_generations/10)) == 0:
                 print(f"Generation {generation} of {num_generations} completed")
-
+                current_best_fitness
+                for j in range(nobj):
+                    if mask[j]:
+                        print(f"{metrics_name_list[j]}: {current_best_fitness[j]:.3f}")
+                    else:
+                        print(f"{metrics_name_list[j]}: {(1 - current_best_fitness[j]):.3f}")
         # Select the best final solution
         if restart == 0:
             total_objectives = np.vstack((objectives, np.array(best_fitness_history)))
@@ -131,6 +138,15 @@ def nsgaii_algorithm_ts(model_simulation, Obs, initialize_population, num_genera
             best_index = select_best_solution(total_objectives)[0]
             best_fitness = total_objectives[best_index]
             best_individual = total_individuals[best_index]
+
+
+    print(f'NSGA-II with tournament selection algorithm completed after {n_restarts} restarts.')
+    print('Best fitness found:')
+    for j in range(nobj):
+        if mask[j]:
+            print(f"{metrics_name_list[j]}: {best_fitness[j]:.3f}")
+        else:
+            print(f"{metrics_name_list[j]}: {(1 - best_fitness[j]):.3f}")
 
     return best_individual, best_fitness, best_fitness_history
 

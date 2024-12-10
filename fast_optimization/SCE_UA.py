@@ -1,6 +1,7 @@
 import numpy as np
 from numba import jit
 from .objectives_functions import multi_obj_func
+from .metrics import backtot
 
 def sce_ua_algorithm(model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, regeneration_rate, eta_mut, num_complexes, kstop, pcento, peps, index_metrics, n_restarts=5):
     """
@@ -32,16 +33,18 @@ def sce_ua_algorithm(model_simulation, Obs, initialize_population, num_generatio
     best_solution = None
     best_fitness = np.inf
 
+    metrics_name_list, mask = backtot()
+    metric_name = [metrics_name_list[k] for k in index_metrics][0]
+    mask = [mask[k] for k in index_metrics][0]
+
     print('Precompilation done!')
     print(f'Starting SCE-UA algorithm with {n_restarts} restarts...')
 
 
-    for i in range(n_restarts):
+    for restart in range(n_restarts):
 
-        if i == 0:
-            print(f'Starting {i+1}/{n_restarts}')
-        else:
-            print(f'Restart {i+1}/{n_restarts}')
+        print(f'Starting {restart+1}/{n_restarts}')
+
 
         # Initialize the population
         population, lower_bounds, upper_bounds = initialize_population(population_size)
@@ -180,6 +183,10 @@ def sce_ua_algorithm(model_simulation, Obs, initialize_population, num_generatio
 
             if generation % (num_generations // (num_generations/10)) == 0:
                 print(f"Generation {generation} of {num_generations} completed.")
+                if mask:
+                    print(f"{metric_name}: {best_fitness:.3f}")
+                else:
+                    print(f"{metric_name}: {(1-best_fitness):.3f}")
         
         # Select the best final solution
         total_objectives = np.hstack((fitness_values, np.array(best_fitness_history).flatten()))
@@ -187,6 +194,14 @@ def sce_ua_algorithm(model_simulation, Obs, initialize_population, num_generatio
         best_index = np.argmin(total_objectives)
         best_fitness = total_objectives[best_index]
         best_individual = total_individuals[best_index]
+
+    print(f'SCE-UA completed after {n_restarts} restarts.')
+    print('Best fitness found:')
+    if mask:
+        print(f"{metric_name}: {best_fitness:.3f}")
+    else:
+        print(f"{metric_name}: {(1-best_fitness):.3f}")
+
 
     # Return the best solution from the archive
     return best_individual, best_fitness, best_fitness_history
