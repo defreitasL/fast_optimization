@@ -1,4 +1,4 @@
-from .objectives_functions import multi_obj_indexes
+from .objectives_functions import multi_obj_indexes, calculate_metrics
 from .NSGAII import nsgaii_algorithm_ts
 from .SPEA2 import spea2_algorithm
 from .SCE_UA import sce_ua_algorithm
@@ -127,3 +127,10 @@ class config_cal(object):
                 self.cooling_rate,
                 self.indexes,
                 self.n_restarts)
+    
+    def metrics_values(self, evaluation, simulation):
+        """
+        Return the metrics values.
+        """
+        return calculate_metrics(evaluation, simulation, self.indexes)
+        

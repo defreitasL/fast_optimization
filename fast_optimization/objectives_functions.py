@@ -23,6 +23,14 @@ def multi_obj_func(evaluation, simulation, indexes):
     
     return likes
 
+def calculate_metrics(evaluation, simulation, indexes):
+    metrics_names, _ = backtot()
+    likes = []
+    for i in indexes:
+        likes.append(opt(i, evaluation, simulation))
+    
+    return likes, metrics_names
+
 def select_best_solution(objectives):
     # Normalizar os objetivos
     min_values = np.min(objectives, axis=0)
