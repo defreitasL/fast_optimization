@@ -3,6 +3,7 @@ from .NSGAII import nsgaii_algorithm_ts
 from .SPEA2 import spea2_algorithm
 from .SCE_UA import sce_ua_algorithm
 from .SimulatedAnnealing import simulated_annealing
+import numpy as np
 
 class config_cal(object):
     """
@@ -128,9 +129,26 @@ class config_cal(object):
                 self.indexes,
                 self.n_restarts)
     
-    def metrics_values(self, evaluation, simulation):
+    def metrics_values(self, model):
         """
         Return the metrics values.
         """
-        return calculate_metrics(evaluation, simulation, self.indexes)
+
+        evaluation = model.Obs_splited
+        simulation = model.model_sim(model.solution)
+
+        metrics_used, metrics_values = calculate_metrics(evaluation, simulation, self.indexes)
+
+        if len(model.idx_validation_for_obs) >0:
+            val = model.run_model(model.solution)[model.idx_validation]
+            val = val[model.idx_validation_for_obs]
+            obs_v = model.Obs[model.idx_validation_obs]
+
+            _, metrics_values_val = calculate_metrics(obs_v, val, self.indexes)
+        else:
+            metrics_values_val = np.zeros(len(self.indexes)) + np.nan
         
+        return metrics_used, metrics_values, metrics_values_val
+        
+
+

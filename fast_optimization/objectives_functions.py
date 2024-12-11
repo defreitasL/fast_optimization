@@ -26,6 +26,7 @@ def multi_obj_func(evaluation, simulation, indexes):
 def calculate_metrics(evaluation, simulation, indexes):
     metrics_names, _ = backtot()
     likes = []
+    metrics_names = [metrics_names[i] for i in indexes]
     for i in indexes:
         likes.append(opt(i, evaluation, simulation))
     
