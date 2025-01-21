@@ -181,7 +181,7 @@ def sce_ua_algorithm(model_simulation, Obs, initialize_population, num_generatio
                 print(f"Converged at generation {generation} based on parameter space convergence.")
                 break
 
-            if generation % (num_generations // (num_generations/10)) == 0:
+            if generation % (num_generations // 10) == 0:
                 print(f"Generation {generation} of {num_generations} completed.")
                 if mask:
                     print(f"{metric_name}: {best_fitness:.3f}")
@@ -227,20 +227,70 @@ def crossover(population, num_vars, crossover_prob, lower_bounds, upper_bounds):
     do_cross = cross_probability < crossover_prob
     R = np.random.randint(0, n_pop, (n_pop, 2))
     parents = R[do_cross]
-    cross_point = np.random.randint(1, num_vars, len(parents))
     child_population = population.copy()
 
-    for i in range(len(parents)):
-        parent1, parent2 = parents[i]
-        point = cross_point[i]
-        # Concatenate parts of parents to create offspring
-        child = np.concatenate((population[parent1, :point], population[parent2, point:]))
-        
-        # Update the population with the newly generated child
-        for j in range(num_vars):
-            child_population[do_cross][i, j] = min(max(child[j], lower_bounds[j]), upper_bounds[j])
+    if num_vars > 1:
+        # General case: num_vars > 1
+        cross_point = np.random.randint(1, num_vars, len(parents))
+        for i in range(len(parents)):
+            parent1, parent2 = parents[i]
+            point = cross_point[i]
+            # Concatenate parts of parents to create offspring
+            child = np.concatenate((population[parent1, :point], population[parent2, point:]))
+            
+            # Ensure bounds are respected
+            for j in range(num_vars):
+                child[j] = min(max(child[j], lower_bounds[j]), upper_bounds[j])
+            
+            # Update child in the population
+            child_population[do_cross][i] = child
+    else:
+        # Special case: num_vars = 1
+        for i in range(len(parents)):
+            parent1, parent2 = parents[i]
+            # For a single variable, offspring is a weighted average of parents
+            child = (population[parent1] + population[parent2]) / 2.0
+            
+            # Ensure bounds are respected
+            child = min(max(child[0], lower_bounds[0]), upper_bounds[0])
+            
+            # Update child in the population
+            child_population[do_cross][i] = child
 
     return child_population
+# def crossover(population, num_vars, crossover_prob, lower_bounds, upper_bounds):
+#     """
+#     Perform crossover operation on the population.
+    
+#     Parameters:
+#     - population: The current population of individuals.
+#     - num_vars: Number of variables in each individual.
+#     - crossover_prob: Probability of crossover.
+#     - lower_bounds: Lower bounds for each variable.
+#     - upper_bounds: Upper bounds for each variable.
+    
+#     Returns:
+#     - child_population: The new population after crossover.
+#     """
+#     n_pop = population.shape[0]
+#     cross_probability = np.random.random(n_pop)
+#     do_cross = cross_probability < crossover_prob
+#     R = np.random.randint(0, n_pop, (n_pop, 2))
+#     parents = R[do_cross]
+#     cross_point = np.random.randint(1, num_vars, len(parents))
+#     child_population = population.copy()
+
+#     for i in range(len(parents)):
+#         parent1, parent2 = parents[i]
+#         point = cross_point[i]
+#         # Concatenate parts of parents to create offspring
+#         child = np.concatenate((population[parent1, :point], population[parent2, point:]))
+        
+#         # Update the population with the newly generated child
+#         for j in range(num_vars):
+#             child_population[do_cross][i, j] = min(max(child[j], lower_bounds[j]), upper_bounds[j])
+
+#     return child_population
 
 
 @jit(nopython=True)
