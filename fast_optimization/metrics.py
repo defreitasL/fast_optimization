@@ -274,91 +274,127 @@ def opt(index, evaluation, simulation):
 
     if index == 0:
         out = mielke_skill_score(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 1:
         out = nashsutcliffe(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 2:
         out = lognashsutcliffe(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 3:
         out = pearson(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 4:
         out = spearman(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 5:
         out = agreementindex(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 6:
         out = kge(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 7:
         out = npkge(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):# or out < 0:
             return 1e-6
         return out
     elif index == 8:
         out = log_p(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):# or out < 0:
             return -999
         return out
     elif index == 9:
         out = bias(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):
             return 1000
         return np.abs(out)
     elif index == 10:
         out = pbias(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):
             return 100
         return out
     elif index == 11:
         out = mse(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):
             return 1000
         return out
     elif index == 12:
         out = rmse(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):
             return 1000
         return out
     elif index == 13:
         out = mae(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):
             return 1000
         return np.abs(out)
     elif index == 14:
         out = rrmse(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):
             return 1000
         return np.abs(out)
     elif index == 15:
         out = rsr(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):
             return 1000
         return np.abs(out)
     elif index == 16:
         out = covariance(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):
             return 1000
         return np.abs(out)
     elif index == 17:
         out = decomposed_mse(evaluation, simulation)
+        if np.abs(out) > 1e6:
+            out = np.nan
         if np.isnan(out):
             return 1000
         return out
