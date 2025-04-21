@@ -70,19 +70,26 @@ def pearson(evaluation, simulation):
     return np.corrcoef(evaluation, simulation)[0, 1]
 
 @jit(nopython=True)
-def spearman(x, y):
+def spearman(evaluation, simulation):
     """
-    Calculate Spearman's rank correlation coefficient.
+    Spearman's rank correlation coefficient (ρ)
     """
-    x_rank = np.argsort(np.argsort(x))
-    y_rank = np.argsort(np.argsort(y))
+    # Elimina posições com NaN em qualquer série
+    mask = ~(np.isnan(evaluation) | np.isnan(simulation))
+    x = evaluation[mask]
+    y = simulation[mask]
     n = len(x)
-    if n == 0:
-        return 0
-    else:
-        numerator = 2 * np.nansum(x_rank * y_rank) - n * (n - 1)
-        denominator = n * (n - 1) * (n + 1)
-        return numerator / denominator
+    if n < 2:
+        return np.nan                      # ou 0.0, se preferir
+
+    # ranks 0..n‑1  (empate: ordem de ocorrência)
+    rx = np.argsort(np.argsort(x))
+    ry = np.argsort(np.argsort(y))
+
+    # Diferença dos ranks
+    d = rx - ry
+    rho = 1.0 - 6.0 * np.sum(d ** 2) / (n * (n ** 2 - 1))
+    return rho
     
 @jit(nopython=True)
 def agreementindex(evaluation, simulation):
