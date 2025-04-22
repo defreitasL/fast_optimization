@@ -354,8 +354,8 @@ def opt(index, evaluation, simulation):
         if np.abs(out) > 1e6:
             out = np.nan
         if np.isnan(out):
-            return 100
-        return out
+            return 1e+6
+        return np.abs(out)
     elif index == 11:
         out = mse(evaluation, simulation)
         if np.abs(out) > 1e6:
