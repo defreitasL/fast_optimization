@@ -66,6 +66,8 @@ class config_cal(object):
         """
         Calibrate the model.
         """
+        seed = np.random.randint(0, 100000)
+        np.random.seed(seed)
         if self.cal_alg == 'NSGAII':
             return nsgaii_algorithm_ts(
                 model.model_sim, 
