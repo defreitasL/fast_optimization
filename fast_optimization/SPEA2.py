@@ -232,7 +232,7 @@ def environmental_selection(population, objectives, m):
 
     return archive, archive_fitness, archive_obj
 
-@jit
+@njit
 def crowd_distance(objectives, ranks):
     """
     Calculate crowding distance for each individual in the population.
