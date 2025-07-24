@@ -1,15 +1,15 @@
 import numpy as np
-from numba import jit
+from numba import njit
 
 
-@jit(nopython=True)
+@njit
 def bias(evaluation, simulation):
     """
     Bias objective function
     """
     return np.nansum(evaluation - simulation) / len(evaluation)
 
-@jit(nopython=True)
+@njit
 def correlation_coefficient_loss(evaluation, simulation):
     x = evaluation
     y = simulation
@@ -24,7 +24,7 @@ def correlation_coefficient_loss(evaluation, simulation):
     r = np.maximum(np.minimum(r, 1.0), -1.0)
     return 1 - np.square(r)
 
-@jit(nopython=True)
+@njit
 def mielke_skill_score(evaluation, simulation):
     """ Mielke index 
     if pearson coefficient (r) is zero or positive use kappa=0
@@ -48,28 +48,28 @@ def mielke_skill_score(evaluation, simulation):
 
     return mss
 
-@jit(nopython=True)
+@njit
 def nashsutcliffe(evaluation, simulation):
     """
     Nash-Sutcliffe objective function
     """
     return 1 - np.nansum((evaluation - simulation) ** 2) / np.nansum((evaluation - np.nanmean(evaluation)) ** 2)
 
-@jit(nopython=True)
+@njit
 def lognashsutcliffe(evaluation, simulation):
     """
     Log Nash-Sutcliffe objective function
     """
     return 1 - np.nansum((np.log(simulation) - np.log(evaluation)) ** 2) / np.nansum((np.log(evaluation) - np.nanmean(np.log(evaluation))) ** 2)
 
-@jit(nopython=True)
+@njit
 def pearson(evaluation, simulation):
     """
     Pearson objective function
     """
     return np.corrcoef(evaluation, simulation)[0, 1]
 
-@jit(nopython=True)
+@njit
 def spearman(evaluation, simulation):
     """
     Spearman's rank correlation coefficient (ρ)
@@ -91,14 +91,14 @@ def spearman(evaluation, simulation):
     rho = 1.0 - 6.0 * np.sum(d ** 2) / (n * (n ** 2 - 1))
     return rho
     
-@jit(nopython=True)
+@njit
 def agreementindex(evaluation, simulation):
     """
     Agreement Index
     """
     return 1 - (np.nansum((evaluation - simulation) ** 2)) / (np.nansum((np.abs(simulation - np.nanmean(evaluation)) + np.abs(evaluation - np.nanmean(evaluation))) ** 2))
 
-@jit(nopython=True)
+@njit
 def kge(evaluation, simulation):
     mu_s = np.nanmean(simulation)
     mu_o = np.nanmean(evaluation)
@@ -116,7 +116,7 @@ def kge(evaluation, simulation):
     kge = 1 - np.sqrt((r - 1)**2 + (alpha - 1)**2 + (beta - 1)**2)
     return kge
 
-@jit(nopython=True)
+@njit
 def npkge(evaluation, simulation):
     """
     Non parametric Kling-Gupta Efficiency
@@ -152,7 +152,7 @@ def npkge(evaluation, simulation):
     
     return kge
 
-@jit(nopython=True)
+@njit
 def log_p(evaluation, simulation):
     """
     Logarithmic Probability Distribution
@@ -164,7 +164,7 @@ def log_p(evaluation, simulation):
     normpdf = -(y ** 2) / 2 - np.log(np.sqrt(2 * np.pi))
     return np.nanmean(normpdf)
 
-@jit(nopython=True)
+@njit
 def covariance(evaluation, simulation):
     """
     Covariance objective function
@@ -174,49 +174,49 @@ def covariance(evaluation, simulation):
     covariance = np.nanmean((evaluation - obs_mean) * (simulation - sim_mean))
     return covariance
 
-@jit(nopython=True)
+@njit
 def pbias(evaluation, simulation):
     """
     Percent Bias
     """
     return 100 * np.nansum(evaluation - simulation) / np.nansum(evaluation)
 
-@jit(nopython=True)
+@njit
 def mse(evaluation, simulation):
     """
     Mean Squared Error
     """
     return np.nanmean((evaluation - simulation) ** 2)
 
-@jit(nopython=True)
+@njit
 def rmse(evaluation, simulation):
     """
     Root Mean Squared Error
     """
     return np.sqrt(np.nanmean((evaluation - simulation) ** 2))
 
-@jit(nopython=True)
+@njit
 def mae(evaluation, simulation):
     """
     Mean Absolute Error
     """
     return np.nanmean(np.abs(evaluation - simulation))
 
-@jit(nopython=True)
+@njit
 def rrmse(evaluation, simulation):
     """
     Relative RMSE
     """
     return rmse(evaluation, simulation) / np.nanmean(evaluation)
 
-@jit(nopython=True)
+@njit
 def rsr(evaluation, simulation):
     """
     RMSE-observations standard deviation ratio
     """
     return rmse(evaluation, simulation) / np.nanstd(evaluation)
 
-@jit(nopython=True)
+@njit
 def decomposed_mse(evaluation, simulation):
     """
     Decomposed MSE
@@ -276,7 +276,7 @@ def backtot():
 
     return metrics_name_list, mask
 
-# @jit(nopython=True)
+# @njit
 def opt(index, evaluation, simulation):
 
     if index == 0:

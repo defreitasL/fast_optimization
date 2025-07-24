@@ -1,5 +1,5 @@
 import numpy as np
-from numba import jit
+from numba import njit
 from .objectives_functions import multi_obj_func
 from .metrics import backtot
 
@@ -207,7 +207,7 @@ def sce_ua_algorithm(model_simulation, Obs, initialize_population, num_generatio
     return best_individual, best_fitness, best_fitness_history
 
 
-@jit(nopython=True)
+@njit
 def crossover(population, num_vars, crossover_prob, lower_bounds, upper_bounds):
     """
     Perform crossover operation on the population.
@@ -293,7 +293,7 @@ def crossover(population, num_vars, crossover_prob, lower_bounds, upper_bounds):
 #     return child_population
 
 
-@jit(nopython=True)
+@njit
 def polynomial_mutation(population, mutation_rate, num_vars, lower_bounds, upper_bounds, eta_mut=20):
     """
     Perform polynomial mutation on the population.

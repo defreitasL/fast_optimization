@@ -1,5 +1,5 @@
 import numpy as np
-from numba import jit
+from numba import njit
 import math
 from .objectives_functions import multi_obj_func, select_best_solution
 from .metrics import backtot
@@ -151,7 +151,7 @@ def nsgaii_algorithm_ts(model_simulation, Obs, initialize_population, num_genera
     return best_individual, best_fitness, best_fitness_history
 
 
-@jit(nopython=True)
+@njit
 def fast_non_dominated_sort(objectives):
     """
     Perform fast non-dominated sorting on a set of objectives to create fronts.
@@ -205,7 +205,7 @@ def fast_non_dominated_sort(objectives):
 
     return ranks, front_indices, front_sizes
 
-@jit(nopython=True)
+@njit
 def crowd_distance(objectives, ranks):
     """
     Calculate crowding distance for each individual in the population.
@@ -244,7 +244,7 @@ def crowd_distance(objectives, ranks):
 
     return distances
 
-@jit(nopython=True)
+@njit
 def tournament_selection_with_crowding(ranks, crowding_distances, pressure):
     """
     Perform tournament selection with crowding distance as a tiebreaker.
@@ -281,7 +281,7 @@ def tournament_selection_with_crowding(ranks, crowding_distances, pressure):
 
     return selected_indices
 
-@jit(nopython=True)
+@njit
 def crossover(population, num_vars, crossover_prob, lower_bounds, upper_bounds):
     """
     Perform crossover operation on the population.
@@ -366,7 +366,7 @@ def crossover(population, num_vars, crossover_prob, lower_bounds, upper_bounds):
 
 #     return child_population
 
-@jit(nopython=True)
+@njit
 def polynomial_mutation(population, mutation_rate, num_vars, lower_bounds, upper_bounds, eta_mut=20):
     """
     Perform polynomial mutation on the population.

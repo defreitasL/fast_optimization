@@ -1,5 +1,5 @@
 import numpy as np
-from numba import jit
+from numba import njit
 import math
 from .objectives_functions import multi_obj_func, select_best_solution
 from .metrics import backtot
@@ -178,7 +178,7 @@ def spea2_algorithm(model_simulation, Obs, initialize_population, num_generation
             print(f"{metrics_name_list[j]}: {(1 - best_fitness[j]):.3f}")
     return best_individual, best_fitness, best_fitness_history
 
-@jit(nopython=True)
+@njit
 def environmental_selection(population, objectives, m):
     """
     Perform environmental selection by calculating fitness and density estimates, selecting individuals for the next generation archive.
@@ -271,7 +271,7 @@ def crowd_distance(objectives, ranks):
 
     return distances
 
-@jit(nopython=True)
+@njit
 def tournament_selection_with_crowding(ranks, crowding_distances, pressure):
     """
     Perform tournament selection with crowding distance as a tiebreaker.
@@ -308,7 +308,7 @@ def tournament_selection_with_crowding(ranks, crowding_distances, pressure):
 
     return selected_indices
 
-@jit(nopython=True)
+@njit
 def crossover(population, num_vars, crossover_prob, lower_bounds, upper_bounds):
     """
     Perform crossover operation on the population.
@@ -398,7 +398,7 @@ def crossover(population, num_vars, crossover_prob, lower_bounds, upper_bounds):
 
 #     return child_population
 
-@jit(nopython=True)
+@njit
 def polynomial_mutation(population, mutation_rate, num_vars, lower_bounds, upper_bounds, eta_mut=20):
     """
     Perform polynomial mutation on the population.
@@ -446,7 +446,7 @@ def polynomial_mutation(population, mutation_rate, num_vars, lower_bounds, upper
 
     return Y
 
-@jit(nopython=True)
+@njit
 def euclidean_distances(X):
     """
     Calculate the Euclidean distances between individuals in a population.
