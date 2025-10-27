@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: fast-optimization
-Version: 1.1.14
+Version: 1.1.15
 Summary: IH-SET Calibration package for shoreline evolution models.
 Home-page: https://github.com/defreitasL/fast_optimization
 Author: Lucas de Freitas Pereira
@@ -14,5 +14,3 @@ Classifier: Programming Language :: Python :: 3.7
 Classifier: Programming Language :: Python :: 3.8
 Classifier: Programming Language :: Python :: 3.9
 License-File: LICENSE
-Requires-Dist: numpy
-Requires-Dist: numba

@@ -137,12 +137,12 @@ class config_cal(object):
         """
 
         evaluation = model.Obs_splited
-        simulation = model.model_sim(model.solution)
+        simulation = model.model_sim(model.par_values)
 
         metrics_values, metrics_used  = calculate_metrics(evaluation, simulation, self.indexes)
 
         if len(model.idx_validation_for_obs) >0:
-            val = model.run_model(model.solution)[model.idx_validation]
+            val = model.run_model(model.par_values)[model.idx_validation]
             val = val[model.idx_validation_for_obs]
             obs_v = model.Obs[model.idx_validation_obs]
 
