@@ -1,28 +1,53 @@
 import numpy as np
 from numba import njit
 
+@njit
+def _nan_aware_pearson(x, y):
+    """
+    NaN-robust Pearson correlation (Numba-friendly).
+
+    Returns
+    -------
+    r : float
+        Pearson correlation in [-1, 1]. Falls back to 0 when variance is tiny.
+    """
+    mask = ~(np.isnan(x) | np.isnan(y))
+    x = x[mask]
+    y = y[mask]
+    n = x.size
+    if n < 2:
+        return 0.0
+
+    mx = np.nanmean(x)
+    my = np.nanmean(y)
+    xm = x - mx
+    ym = y - my
+    num = np.nansum(xm * ym)
+    den = np.sqrt(np.nansum(xm * xm) * np.nansum(ym * ym))
+    if den <= 1e-12:
+        return 0.0
+    r = num / den
+    # clip for numerical safety
+    if r > 1.0:
+        r = 1.0
+    elif r < -1.0:
+        r = -1.0
+    return r
 
 @njit
 def bias(evaluation, simulation):
     """
     Bias objective function
     """
-    return np.nansum(evaluation - simulation) / len(evaluation)
+    return np.nanmean(evaluation - simulation)
 
 @njit
 def correlation_coefficient_loss(evaluation, simulation):
-    x = evaluation
-    y = simulation
-    mx = np.nanmean(x)
-    my = np.nanmean(y)
-    xm, ym = x - mx, y - my
-    r_num = np.nansum(xm * ym)
-    r_den = np.sqrt(np.nansum(np.square(xm)) * np.nansum(np.square(ym)))
-    if r_den == 0:
-        r_den = 1e-10
-    r = r_num / r_den
-    r = np.maximum(np.minimum(r, 1.0), -1.0)
-    return 1 - np.square(r)
+    """
+    Loss = 1 - r^2 (minimize). NaN-robust.
+    """
+    r = _nan_aware_pearson(evaluation, simulation)
+    return 1.0 - (r * r)
 
 @njit
 def mielke_skill_score(evaluation, simulation):
@@ -65,9 +90,9 @@ def lognashsutcliffe(evaluation, simulation):
 @njit
 def pearson(evaluation, simulation):
     """
-    Pearson objective function
+    Pearson correlation (maximize), NaN-robust, Numba-friendly.
     """
-    return np.corrcoef(evaluation, simulation)[0, 1]
+    return _nan_aware_pearson(evaluation, simulation)
 
 @njit
 def spearman(evaluation, simulation):
@@ -109,7 +134,7 @@ def kge(evaluation, simulation):
     if std_s == 0:
         std_s = 1e-10
     
-    r = np.corrcoef(simulation, evaluation)[0, 1]
+    r = _nan_aware_pearson(evaluation, simulation)
     beta = mu_s / mu_o
     alpha = std_s / std_o
     
@@ -225,7 +250,7 @@ def decomposed_mse(evaluation, simulation):
     s_std = np.nanstd(simulation)
     bias_squared = bias(evaluation, simulation) ** 2
     sdsd = (e_std - s_std) ** 2
-    lcs = 2 * e_std * s_std * (1 - np.corrcoef(evaluation, simulation)[0, 1])
+    lcs = 2 * e_std * s_std * (1 - _nan_aware_pearson(evaluation, simulation))
     decomposed_mse = bias_squared + sdsd + lcs
 
     return decomposed_mse
@@ -249,7 +274,7 @@ def backtot():
         'mae',                      #Min Mean Absolute Error (MAE) ok
         'rrmse',                    #Min Relative RMSE (RRMSE) ok
         'rsr',                      #Min RMSE-observations standard deviation ratio (RSR) ok
-        'covariance',               #Min Covariance ok
+        'covariance',               #Max Covariance ok
         'decomposed_mse',           #Min Decomposed MSE (DMSE) ok
     ]
 
@@ -270,7 +295,7 @@ def backtot():
         True,
         True,
         True,
-        True,
+        False,
         True,
     ]
 

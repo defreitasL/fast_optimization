@@ -3,80 +3,129 @@ from numba import njit
 from .objectives_functions import multi_obj_func
 from .metrics import backtot
 
-def sce_ua_algorithm(model_simulation, Obs, initialize_population, num_generations, population_size, cross_prob, mutation_rate, regeneration_rate, eta_mut, num_complexes, kstop, pcento, peps, index_metrics, n_restarts=5):
+def sce_ua_algorithm(
+    model_simulation,
+    Obs,
+    initialize_population,
+    num_generations,
+    population_size,
+    cross_prob,
+    mutation_rate,
+    regeneration_rate,
+    eta_mut,
+    num_complexes,
+    kstop,
+    pcento,
+    peps,
+    index_metrics,
+    n_restarts=5,
+):
     """
-    SCE-UA Optimization Algorithm (Adapted to Python).
-    This algorithm aims to optimize an objective function by evolving a population using complex-based partitioning and evolving each complex.
-    
-    Parameters:
-    - model_simulation: Function that simulates the model given an input vector of parameters.
-    - Obs: Observed data used for calculating the fitness.
-    - initialize_population: Function to initialize the population.
-    - num_generations: Number of generations to evolve.
-    - population_size: Size of the population.
-    - cross_prob: Probability of crossover.
-    - mutation_rate: Probability of mutation.
-    - regeneration_rate: Proportion of the population to be regenerated each generation.
-    - eta_mut: Mutation parameter for polynomial mutation.
-    - num_complexes: Number of complexes for partitioning the population.
-    - kstop: Number of past evolution loops to assess convergence.
-    - pcento: Percentage improvement allowed in the past kstop loops for convergence.
-    - peps: Threshold for the normalized geometric range of parameters to determine convergence.
-    - index_metrics: Index used for multi-objective evaluation.
+    SCE-UA (Shuffled Complex Evolution) single-objective calibration.
 
-    Returns:
-    - best_individual: The best solution found.
-    - best_fitness: Fitness value of the best solution.
-    - best_fitness_history: History of the best fitness values over generations.
+    This implementation follows the classic SCE-UA idea:
+      1) Initialize a population.
+      2) Shuffle and split into 'complexes'.
+      3) Within each complex, repeatedly evolve a small simplex via
+         reflection / contraction / random replacement (à la Nelder–Mead),
+         biased toward better points for sampling.
+      4) Reassemble, apply genetic operators (crossover, mutation),
+         and inject random individuals (regeneration) to preserve diversity.
+      5) Track the global best and check convergence.
+
+    Notes on objective direction:
+      * `multi_obj_func` already returns a value to MINIMIZE (it flips "maximize" metrics
+        via 1 - metric). Here we always minimize the first (and only) metric specified
+        by `index_metrics`.
+
+    Parameters
+    ----------
+    model_simulation : callable
+        f(theta) -> model outputs used to compute the objective.
+    Obs : array-like
+        Observations used by the metric.
+    initialize_population : callable
+        f(n) -> (pop, lb, ub), where pop.shape == (n, npar).
+    num_generations : int
+        Maximum number of generations (outer loops).
+    population_size : int
+        Population size.
+    cross_prob : float
+        Crossover probability (will be adaptively decreased).
+    mutation_rate : float
+        Mutation probability (will be adaptively decreased).
+    regeneration_rate : float
+        Fraction of population replaced each generation with random candidates.
+    eta_mut : float
+        Polynomial mutation parameter.
+    num_complexes : int
+        Number of complexes to split the population into each generation.
+    kstop : int
+        Window length for improvement-based early stopping.
+    pcento : float
+        Minimum relative improvement required over the last `kstop` steps to continue.
+    peps : float
+        Threshold for normalized geometric range of parameters for convergence.
+    index_metrics : list[int]
+        Single-element list with the metric index (see your `backtot()`/`opt()`).
+    n_restarts : int, optional
+        Number of multi-start restarts.
+
+    Returns
+    -------
+    best_individual : ndarray (npar,)
+        Best parameters found across restarts.
+    best_fitness : float
+        Objective (to minimize) of the best individual.
+    best_fitness_history : list[float]
+        Best-of-run fitness per generation for the last restart.
     """
-
-    best_solution = None
-    best_fitness = np.inf
-
-    metrics_name_list, mask = backtot()
+    # Resolve metric name and direction (mask=True means minimize in your framework)
+    metrics_name_list, mask_list = backtot()
     metric_name = [metrics_name_list[k] for k in index_metrics][0]
-    mask = [mask[k] for k in index_metrics][0]
+    is_minimize = [mask_list[k] for k in index_metrics][0]
 
-    print('Precompilation done!')
-    print(f'Starting SCE-UA algorithm with {n_restarts} restarts...')
+    print("Precompilation done!")
+    print(f"Starting SCE-UA algorithm with {n_restarts} restarts...")
 
+    # Global best across restarts
+    global_best_individual = None
+    global_best_fitness = np.inf
 
     for restart in range(n_restarts):
+        print(f"Starting {restart + 1}/{n_restarts}")
 
-        print(f'Starting {restart+1}/{n_restarts}')
-
-
-        # Initialize the population
+        # --- 1) Initialize population and bounds
         population, lower_bounds, upper_bounds = initialize_population(population_size)
         num_params = population.shape[1]
 
-        # Evaluate initial population
-        fitness_values = np.array([multi_obj_func(Obs, model_simulation(ind), index_metrics)[0] for ind in population])
+        # Evaluate initial population (single-objective: take [0])
+        fitness_values = np.array(
+            [multi_obj_func(Obs, model_simulation(ind), index_metrics)[0] for ind in population]
+        )
 
-        # Number of individuals to regenerate each generation
+        # Derived sizes
         num_to_regenerate = int(np.ceil(regeneration_rate * population_size))
-
-        # Archive to store the best solutions found
-        archive = []
-
-
-
-
-        # Main loop
         best_fitness_history = []
         best_individuals = []
+
+        # Keep the best-so-far for this restart
+        best_solution = population[np.argmin(fitness_values)].copy()
+        best_fitness = np.min(fitness_values)
+
+        # --- 2) Main generations loop
         for generation in range(num_generations):
-            # Adaptively adjust alpha and beta based on generation progress
-            alpha = 1.3 - (0.9 * (generation / num_generations))  # Decreases over generations for controlled exploration
-            beta = 0.5 + (0.3 * (generation / num_generations))  # Increases for more refined contraction
+            # Adaptive reflection/contraction coefficients
+            alpha = 1.3 - (0.9 * (generation / num_generations))  # decreases over time
+            beta = 0.5 + (0.3 * (generation / num_generations))   # increases over time
 
-            # Shuffle the population
-            indices = np.random.permutation(population_size)
-            population = population[indices]
-            fitness_values = fitness_values[indices]
+            # Shuffle population and fitness in the same way
+            perm = np.random.permutation(population_size)
+            population = population[perm]
+            fitness_values = fitness_values[perm]
 
-            # Divide population into complexes
-            complex_size = population_size // num_complexes
+            # Split into complexes
+            complex_size = max(2, population_size // max(1, num_complexes))
             for complex_index in range(num_complexes):
                 start = complex_index * complex_size
                 end = start + complex_size if complex_index != num_complexes - 1 else population_size
@@ -84,259 +133,333 @@ def sce_ua_algorithm(model_simulation, Obs, initialize_population, num_generatio
                 complex_population = population[start:end]
                 complex_fitness = fitness_values[start:end]
 
-                # Sort complex by fitness
-                sorted_indices = np.argsort(complex_fitness)
-                complex_population = complex_population[sorted_indices]
-                complex_fitness = complex_fitness[sorted_indices]
+                # Sort complex by fitness ascending (best first)
+                order = np.argsort(complex_fitness)
+                complex_population = complex_population[order]
+                complex_fitness = complex_fitness[order]
 
                 # Evolve the complex
-                for _ in range(complex_size):
-                    # Select simplex by sampling the complex according to a linear probability distribution
-                    probabilities = np.linspace(1, 0, complex_size)
-                    probabilities /= np.sum(probabilities)
-                    simplex_indices = np.random.choice(complex_size, size=num_params + 1, replace=False, p=probabilities)
-                    simplex = complex_population[simplex_indices]
-                    simplex_fitness = complex_fitness[simplex_indices]
+                for _ in range(complex_population.shape[0]):
+                    # Sample a simplex (size = min(num_params+1, complex_size)) with bias to good points
+                    csize = complex_population.shape[0]
+                    simplex_size = min(num_params + 1, csize)
+                    # Linear probability: higher for better-ranked individuals
+                    probs = np.linspace(1.0, 0.0, csize)
+                    s = probs.sum()
+                    if s <= 1e-12:
+                        probs[:] = 1.0 / csize
+                    else:
+                        probs /= s
+                    simplex_indices = np.random.choice(
+                        csize, size=simplex_size, replace=False, p=probs
+                    )
 
-                    # Attempt a reflection point
-                    centroid = np.mean(simplex[:-1], axis=0)
-                    worst_point = simplex[-1]
+                    simplex = complex_population[simplex_indices].copy()
+                    simplex_fitness = complex_fitness[simplex_indices].copy()
+
+                    # Identify TRUE worst point in the sampled simplex
+                    worst_local_idx = np.argmax(simplex_fitness)
+                    worst_point = simplex[worst_local_idx]
+                    worst_f = simplex_fitness[worst_local_idx]
+
+                    # Centroid of all but the worst
+                    centroid = np.mean(np.delete(simplex, worst_local_idx, axis=0), axis=0)
+
+                    # Reflect
                     reflected_point = centroid + alpha * (centroid - worst_point)
                     reflected_point = np.clip(reflected_point, lower_bounds, upper_bounds)
-                    reflected_fitness = multi_obj_func(Obs, model_simulation(reflected_point), index_metrics)[0]
+                    reflected_f = multi_obj_func(Obs, model_simulation(reflected_point), index_metrics)[0]
 
-                    if reflected_fitness < simplex_fitness[-1]:
-                        simplex[-1] = reflected_point
-                        simplex_fitness[-1] = reflected_fitness
+                    if reflected_f < worst_f:
+                        # Accept reflection
+                        simplex[worst_local_idx] = reflected_point
+                        simplex_fitness[worst_local_idx] = reflected_f
                     else:
-                        # Attempt a contraction point
+                        # Contract toward centroid from worst
                         contracted_point = centroid + beta * (worst_point - centroid)
                         contracted_point = np.clip(contracted_point, lower_bounds, upper_bounds)
-                        contracted_fitness = multi_obj_func(Obs, model_simulation(contracted_point), index_metrics)[0]
+                        contracted_f = multi_obj_func(Obs, model_simulation(contracted_point), index_metrics)[0]
 
-                        if contracted_fitness < simplex_fitness[-1]:
-                            simplex[-1] = contracted_point
-                            simplex_fitness[-1] = contracted_fitness
+                        if contracted_f < worst_f:
+                            simplex[worst_local_idx] = contracted_point
+                            simplex_fitness[worst_local_idx] = contracted_f
                         else:
-                            # Replace with a random point
+                            # Random replacement within bounds
                             random_point, _, _ = initialize_population(1)
-                            simplex[-1] = random_point[0]
-                            simplex_fitness[-1] = multi_obj_func(Obs, model_simulation(random_point[0]), index_metrics)[0]
+                            rp = random_point[0]
+                            simplex[worst_local_idx] = rp
+                            simplex_fitness[worst_local_idx] = multi_obj_func(
+                                Obs, model_simulation(rp), index_metrics
+                            )[0]
 
-                    # Update the complex with the evolved simplex
+                    # Write back evolved simplex into the complex
                     complex_population[simplex_indices] = simplex
                     complex_fitness[simplex_indices] = simplex_fitness
 
-                # Update the main population with the evolved complex
+                # Update the main arrays for this complex slot
                 population[start:end] = complex_population
                 fitness_values[start:end] = complex_fitness
 
-            # Elitism: Keep the best solution found so far
-            current_best_index = np.argmin(fitness_values)
-            current_best_fitness = fitness_values[current_best_index]
-            if current_best_fitness < best_fitness:
-                best_fitness = current_best_fitness
-                best_solution = population[current_best_index]
-                archive.append((best_solution, best_fitness))
+            # --- 3) Elitism: keep global best of this restart
+            curr_best_idx = np.argmin(fitness_values)
+            curr_best_fit = fitness_values[curr_best_idx]
+            if curr_best_fit < best_fitness:
+                best_fitness = curr_best_fit
+                best_solution = population[curr_best_idx].copy()
 
-            # Crossover operation
-            cross_prob = cross_prob * (1 - generation / num_generations)  # Gradually reduce crossover rate
-            population = crossover(population, num_params, cross_prob, lower_bounds, upper_bounds)
+            # --- 4) Genetic operators (with adaptive rates)
+            # (a) Crossover
+            cross_prob_gen = cross_prob * (1.0 - generation / num_generations)
+            population = crossover(population, num_params, cross_prob_gen, lower_bounds, upper_bounds)
 
-            # Mutation operation
-            mutation_rate = mutation_rate * (1 - generation / num_generations)  # Gradually reduce mutation rate
-            population = polynomial_mutation(population, mutation_rate, num_params, lower_bounds, upper_bounds, eta_mut)
+            # (b) Mutation
+            mutation_rate_gen = mutation_rate * (1.0 - generation / num_generations)
+            population = polynomial_mutation(
+                population, mutation_rate_gen, num_params, lower_bounds, upper_bounds, eta_mut
+            )
 
-            # Reintroduce new individuals to maintain genetic diversity
-            new_individuals, _, _ = initialize_population(num_to_regenerate)
-            new_individuals_fitness = np.array([multi_obj_func(Obs, model_simulation(ind), index_metrics)[0] for ind in new_individuals])
+            # Re-evaluate fitness AFTER GA operators
+            fitness_values = np.array(
+                [multi_obj_func(Obs, model_simulation(ind), index_metrics)[0] for ind in population]
+            )
 
-            # Replace worst individuals with new ones
-            worst_indices = np.argsort(fitness_values)[-num_to_regenerate:]
-            population[worst_indices] = new_individuals
-            fitness_values[worst_indices] = new_individuals_fitness
+            # --- 5) Regeneration (inject diversity)
+            if num_to_regenerate > 0:
+                new_individuals, _, _ = initialize_population(num_to_regenerate)
+                new_fitness = np.array(
+                    [multi_obj_func(Obs, model_simulation(ind), index_metrics)[0] for ind in new_individuals]
+                )
 
+                # Replace current worst individuals
+                worst_indices = np.argsort(fitness_values)[-num_to_regenerate:]
+                population[worst_indices] = new_individuals
+                fitness_values[worst_indices] = new_fitness
+
+            # Track best history (for this restart)
             best_fitness_history.append(best_fitness)
-            best_individuals.append(best_solution)
+            best_individuals.append(best_solution.copy())
 
-            # Simulated annealing: Accept worse solutions with decreasing probability
-            temperature = max(0.1, (1 - generation / num_generations))  # Temperature decreases over time
+            # Optional SA-like occasional acceptance (kept simple and conservative)
+            temperature = max(0.1, (1.0 - generation / num_generations))
             if np.random.rand() < temperature:
-                random_index = np.random.randint(population_size)
-                random_solution = population[random_index]
-                random_fitness = multi_obj_func(Obs, model_simulation(random_solution), index_metrics)[0]
-                if random_fitness < best_fitness:
-                    best_fitness = random_fitness
-                    best_solution = random_solution
+                ridx = np.random.randint(population_size)
+                rf = multi_obj_func(Obs, model_simulation(population[ridx]), index_metrics)[0]
+                if rf < best_fitness:
+                    best_fitness = rf
+                    best_solution = population[ridx].copy()
 
-            # Check convergence based on improvement criteria or parameter space convergence
+            # --- 6) Convergence checks
             if generation > kstop:
-                recent_improvement = (best_fitness_history[-kstop] - best_fitness) / abs(best_fitness_history[-kstop])
+                prev_best = best_fitness_history[-kstop]
+                if np.abs(prev_best) > 0:
+                    recent_improvement = (prev_best - best_fitness) / np.abs(prev_best)
+                else:
+                    recent_improvement = 0.0
                 if recent_improvement < pcento:
                     print(f"Converged at generation {generation} based on improvement criteria.")
                     break
 
-            gnrng = np.exp(np.mean(np.log((np.max(population, axis=0) - np.min(population, axis=0)) / (upper_bounds - lower_bounds))))
+            eps = 1e-12
+            ranges = np.maximum(np.max(population, axis=0) - np.min(population, axis=0), eps)
+            denom = np.maximum(upper_bounds - lower_bounds, eps)
+            gnrng = np.exp(np.mean(np.log(ranges / denom)))
             if gnrng < peps:
                 print(f"Converged at generation {generation} based on parameter space convergence.")
                 break
 
-            if generation % (num_generations // 10) == 0:
+            if generation % max(1, (num_generations // 10)) == 0:
                 print(f"Generation {generation} of {num_generations} completed.")
-                if mask:
+                if is_minimize:
                     print(f"{metric_name}: {best_fitness:.3f}")
                 else:
-                    print(f"{metric_name}: {(1-best_fitness):.3f}")
-        
-        # Select the best final solution
-        total_objectives = np.hstack((fitness_values, np.array(best_fitness_history).flatten()))
-        total_individuals = np.vstack((population, np.array(best_individuals)))
-        best_index = np.argmin(total_objectives)
-        best_fitness = total_objectives[best_index]
-        best_individual = total_individuals[best_index]
+                    # If the underlying metric is "maximize", multi_obj_func produced (1 - metric)
+                    # so printing (1 - best_fitness) recovers the metric scale
+                    print(f"{metric_name}: {(1.0 - best_fitness):.3f}")
 
-    print(f'SCE-UA completed after {n_restarts} restarts.')
-    print('Best fitness found:')
-    if mask:
-        print(f"{metric_name}: {best_fitness:.3f}")
+        # --- 7) Final selection for this restart
+        # Combine current population and the tracked best across generations
+        combined_fitness = np.concatenate(
+            [fitness_values, np.asarray(best_fitness_history, dtype=float)]
+        )
+        combined_individuals = np.vstack(
+            [population, np.asarray(best_individuals)]
+        )
+        best_idx = np.argmin(combined_fitness)
+        restart_best_fitness = combined_fitness[best_idx]
+        restart_best_individual = combined_individuals[best_idx].copy()
+
+        # Update global best across restarts
+        if restart_best_fitness < global_best_fitness:
+            global_best_fitness = restart_best_fitness
+            global_best_individual = restart_best_individual.copy()
+
+    # --- 8) Report
+    print("SCE-UA completed after {} restarts.".format(n_restarts))
+    print("Best fitness found:")
+    if is_minimize:
+        print(f"{metric_name}: {global_best_fitness:.3f}")
     else:
-        print(f"{metric_name}: {(1-best_fitness):.3f}")
+        print(f"{metric_name}: {(1.0 - global_best_fitness):.3f}")
 
-
-    # Return the best solution from the archive
-    return best_individual, best_fitness, best_fitness_history
+    return global_best_individual, global_best_fitness, best_fitness_history
 
 
 @njit
 def crossover(population, num_vars, crossover_prob, lower_bounds, upper_bounds):
     """
-    Perform crossover operation on the population.
-    
-    Parameters:
-    - population: The current population of individuals.
-    - num_vars: Number of variables in each individual.
-    - crossover_prob: Probability of crossover.
-    - lower_bounds: Lower bounds for each variable.
-    - upper_bounds: Upper bounds for each variable.
-    
-    Returns:
-    - child_population: The new population after crossover.
+    One-point crossover with per-individual application.
+
+    Notes
+    -----
+    - A crossover is attempted independently for each individual with
+      probability `crossover_prob`. For each selected individual, two
+      random parents are chosen and a one-point crossover is performed.
+    - Bounds are enforced (clamped) gene-wise on the resulting child.
+    - Uses integer indices instead of boolean views to avoid temporary
+      copies under Numba and ensure in-place updates.
+
+    Parameters
+    ----------
+    population : (N, D) array
+        Current population (N individuals, D parameters).
+    num_vars : int
+        Number of parameters (D).
+    crossover_prob : float
+        Probability that a given individual will be replaced by a crossover child.
+    lower_bounds, upper_bounds : (D,) arrays
+        Gene-wise lower/upper bounds.
+
+    Returns
+    -------
+    child_population : (N, D) array
+        Population after applying crossover (in-place copy of `population`).
     """
     n_pop = population.shape[0]
+    # Decide who gets crossover
     cross_probability = np.random.random(n_pop)
     do_cross = cross_probability < crossover_prob
-    R = np.random.randint(0, n_pop, (n_pop, 2))
-    parents = R[do_cross]
+    idxs = np.where(do_cross)[0]  # integer indices of those to replace
+
+    # For each selected individual, draw two parents
+    parents = np.random.randint(0, n_pop, (idxs.shape[0], 2))
+
+    # Copy base pop for output (children overwrite selected rows)
     child_population = population.copy()
 
     if num_vars > 1:
-        # General case: num_vars > 1
-        cross_point = np.random.randint(1, num_vars, len(parents))
-        for i in range(len(parents)):
-            parent1, parent2 = parents[i]
+        # One-point crossover index in [1, num_vars-1]
+        cross_point = np.random.randint(1, num_vars, idxs.shape[0])
+
+        for i in range(idxs.shape[0]):
+            p1, p2 = parents[i]
             point = cross_point[i]
-            # Concatenate parts of parents to create offspring
-            child = np.concatenate((population[parent1, :point], population[parent2, point:]))
-            
-            # Ensure bounds are respected
+
+            # Build child gene-wise (avoid np.concatenate for clarity under Numba)
+            child = np.empty(num_vars, dtype=population.dtype)
+            for j in range(point):
+                child[j] = population[p1, j]
+            for j in range(point, num_vars):
+                child[j] = population[p2, j]
+
+            # Clamp to bounds
             for j in range(num_vars):
-                child[j] = min(max(child[j], lower_bounds[j]), upper_bounds[j])
-            
-            # Update child in the population
-            child_population[do_cross][i] = child
+                if child[j] < lower_bounds[j]:
+                    child[j] = lower_bounds[j]
+                elif child[j] > upper_bounds[j]:
+                    child[j] = upper_bounds[j]
+
+            # Write back into the selected slot
+            child_population[idxs[i], :] = child
+
     else:
-        # Special case: num_vars = 1
-        for i in range(len(parents)):
-            parent1, parent2 = parents[i]
-            # For a single variable, offspring is a weighted average of parents
-            child = (population[parent1] + population[parent2]) / 2.0
-            
-            # Ensure bounds are respected
-            child = min(max(child[0], lower_bounds[0]), upper_bounds[0])
-            
-            # Update child in the population
-            child_population[do_cross][i] = child
+        # Special case D == 1: child = average of two parents, clamped
+        for i in range(idxs.shape[0]):
+            p1, p2 = parents[i]
+            val = 0.5 * (population[p1, 0] + population[p2, 0])
+
+            # Clamp
+            if val < lower_bounds[0]:
+                val = lower_bounds[0]
+            elif val > upper_bounds[0]:
+                val = upper_bounds[0]
+
+            child_population[idxs[i], 0] = val
 
     return child_population
-# def crossover(population, num_vars, crossover_prob, lower_bounds, upper_bounds):
-#     """
-#     Perform crossover operation on the population.
-    
-#     Parameters:
-#     - population: The current population of individuals.
-#     - num_vars: Number of variables in each individual.
-#     - crossover_prob: Probability of crossover.
-#     - lower_bounds: Lower bounds for each variable.
-#     - upper_bounds: Upper bounds for each variable.
-    
-#     Returns:
-#     - child_population: The new population after crossover.
-#     """
-#     n_pop = population.shape[0]
-#     cross_probability = np.random.random(n_pop)
-#     do_cross = cross_probability < crossover_prob
-#     R = np.random.randint(0, n_pop, (n_pop, 2))
-#     parents = R[do_cross]
-#     cross_point = np.random.randint(1, num_vars, len(parents))
-#     child_population = population.copy()
-
-#     for i in range(len(parents)):
-#         parent1, parent2 = parents[i]
-#         point = cross_point[i]
-#         # Concatenate parts of parents to create offspring
-#         child = np.concatenate((population[parent1, :point], population[parent2, point:]))
-        
-#         # Update the population with the newly generated child
-#         for j in range(num_vars):
-#             child_population[do_cross][i, j] = min(max(child[j], lower_bounds[j]), upper_bounds[j])
-
-#     return child_population
-
 
 @njit
 def polynomial_mutation(population, mutation_rate, num_vars, lower_bounds, upper_bounds, eta_mut=20):
     """
-    Perform polynomial mutation on the population.
-    
-    Parameters:
-    - population: The current population of individuals.
-    - mutation_rate: Probability of mutation.
-    - num_vars: Number of variables in each individual.
-    - lower_bounds: Lower bounds for each variable.
-    - upper_bounds: Upper bounds for each variable.
-    - eta_mut: Mutation parameter (default is 20).
-    
-    Returns:
-    - Y: The new population after mutation.
+    Per-gene polynomial mutation (Deb, 2001).
+
+    Notes
+    -----
+    - Mutation is applied independently to each gene with probability `mutation_rate`.
+    - If a gene's span is zero (upper == lower), the mutation is skipped to avoid
+      division-by-zero and NaNs.
+    - The mutated gene is clamped to [lower_bounds[j], upper_bounds[j]].
+
+    Parameters
+    ----------
+    population : (N, D) array
+        Current population (N individuals, D parameters).
+    mutation_rate : float
+        Per-gene mutation probability in [0, 1].
+    num_vars : int
+        Number of parameters (D).
+    lower_bounds, upper_bounds : (D,) arrays
+        Gene-wise lower/upper bounds.
+    eta_mut : float, optional
+        Distribution index for the polynomial mutation (controls tail heaviness).
+
+    Returns
+    -------
+    Y : (N, D) array
+        Population after mutation (copy of `population` with mutated genes).
     """
     X = population.copy()
-    Y = np.full(X.shape, np.inf)
-    do_mutation = np.random.random(X.shape) < mutation_rate
-    Y[:, :] = X
+    Y = X.copy()  # start from original; modify where mutation happens
 
-    for i in range(len(population)):
+    # Bernoulli mask: which genes mutate
+    do_mutation = np.random.random(X.shape) < mutation_rate
+
+    for i in range(X.shape[0]):
         for j in range(num_vars):
             if do_mutation[i, j]:
                 xl = lower_bounds[j]
                 xu = upper_bounds[j]
-                x = X[i, j]
 
-                delta1 = (x - xl) / (xu - xl)
-                delta2 = (xu - x) / (xu - xl)
+                # Skip if the gene is effectively fixed (no span)
+                span = xu - xl
+                if span <= 1e-12:
+                    continue
+
+                x = X[i, j]
+                # Normalize distance to bounds
+                delta1 = (x - xl) / span
+                delta2 = (xu - x) / span
+
+                # Standard polynomial mutation draw
                 mut_pow = 1.0 / (eta_mut + 1.0)
                 rand = np.random.random()
 
                 if rand <= 0.5:
                     xy = 1.0 - delta1
                     val = 2.0 * rand + (1.0 - 2.0 * rand) * (xy ** (eta_mut + 1.0))
-                    deltaq = (val ** mut_pow) - 1.0
+                    delta_q = (val ** mut_pow) - 1.0
                 else:
                     xy = 1.0 - delta2
                     val = 2.0 * (1.0 - rand) + 2.0 * (rand - 0.5) * (xy ** (eta_mut + 1.0))
-                    deltaq = 1.0 - (val ** mut_pow)
+                    delta_q = 1.0 - (val ** mut_pow)
 
-                mutated_value = x + deltaq * (xu - xl)
-                mutated_value = max(xl, min(mutated_value, xu))
+                mutated_value = x + delta_q * span
+
+                # Clamp to bounds
+                if mutated_value < xl:
+                    mutated_value = xl
+                elif mutated_value > xu:
+                    mutated_value = xu
+
                 Y[i, j] = mutated_value
 
     return Y
