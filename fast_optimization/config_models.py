@@ -136,16 +136,14 @@ class config_cal(object):
         Return the metrics values.
         """
 
-        evaluation = model.Obs_splited
-        simulation = model.model_sim(model.par_values)
+        simulation = model.full_run
+        cal = simulation[model.idx_obs_splited]
 
-        metrics_values, metrics_used  = calculate_metrics(evaluation, simulation, self.indexes)
+        metrics_values, metrics_used = calculate_metrics(model.Obs_splited, cal, self.indexes)
 
         if len(model.idx_validation_for_obs) >0:
-            val = model.run_model(model.par_values)[model.idx_validation]
-            val = val[model.idx_validation_for_obs]
+            val = simulation[model.idx_validation_for_obs]
             obs_v = model.Obs[model.idx_validation_obs]
-
             metrics_values_val, _ = calculate_metrics(obs_v, val, self.indexes)
         else:
             metrics_values_val = np.zeros(len(self.indexes)) + np.nan
