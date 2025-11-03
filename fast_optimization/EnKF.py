@@ -9,7 +9,7 @@ from typing import Callable, Tuple, Optional, Sequence, Any, Dict
 #       pop: (n, D), lb: (D,), ub: (D,)
 #   model_step(theta, t_idx, context=None) -> y_pred OR (y_pred, new_context)
 #       y_pred shape must match one row of y_obs: (p,) or scalar
-# Optional (faster): model_step_batch(pop, t_idx, contexts=None) -> Y_pred OR (Y_pred, new_contexts)
+# Optional (faster): model_step_batch(pop, t_idx) -> Y_pred OR (Y_pred, new_contexts)
 #       Y_pred shape (N, p)
 # ---------------------------------------------------------------------
 
@@ -152,10 +152,9 @@ def enkf_parameter_assimilation(
 
         # 2) Model forecast: Yf shape (p, N)
         if config.use_batch_step and model_step_batch is not None:
-            out = model_step_batch(pop, t_idx, contexts)
+            out = model_step_batch(pop, t_idx)
             if isinstance(out, tuple):
-                Y_pred, new_contexts = out
-                contexts = list(new_contexts)
+                Y_pred = out
             else:
                 Y_pred = out
             if Y_pred.ndim == 1:
@@ -172,9 +171,9 @@ def enkf_parameter_assimilation(
         else:
             Yf = np.zeros((p, N))
             for j in range(N):
-                out = model_step(pop[j], t_idx, contexts[j])
+                out = model_step(pop[j], t_idx)
                 if isinstance(out, tuple):
-                    yj, contexts[j] = out
+                    yj = out
                 else:
                     yj = out
                 yj = np.asarray(yj).ravel()
