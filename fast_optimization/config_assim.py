@@ -68,12 +68,7 @@ class ConfigAssim:
 
     def assimilate(
         self,
-        model: Any,
-        *,
-        model_step_batch: Optional[
-            Callable[[Array, int, Optional[Sequence[Any]]], Any]
-        ] = None,
-        init_member_contexts: Optional[Sequence[Any]] = None,
+        model: Any
     ) -> Dict[str, Array]:
         """
         Run parameter EnKF using members found on `model` + R from cfg (or model).
@@ -105,6 +100,7 @@ class ConfigAssim:
                 raise AttributeError(f"Model must provide '{attr}'")
 
         model_step = model.model_step
+        model_step_batch = model.model_step_batch
         t_indices = model.idx_assim
         y_obs = model.Obs_splited
         initialize_population = model.init_par
@@ -137,7 +133,7 @@ class ConfigAssim:
             R=R,
             config=self.enkf_cfg,
             model_step_batch=model_step_batch,
-            init_member_contexts=init_member_contexts,
+            init_member_contexts=[{'y_old': float(self.Yini)} for _ in range(self.enkf_cfg.ensemble_size)],
         )
 
         return {

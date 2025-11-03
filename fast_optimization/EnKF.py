@@ -152,9 +152,10 @@ def enkf_parameter_assimilation(
 
         # 2) Model forecast: Yf shape (p, N)
         if config.use_batch_step and model_step_batch is not None:
-            out = model_step_batch(pop, t_idx)
+            out = model_step_batch(pop, t_idx, contexts)
             if isinstance(out, tuple):
-                Y_pred = out
+                Y_pred, new_contexts = out
+                contexts = list(new_contexts)
             else:
                 Y_pred = out
             if Y_pred.ndim == 1:
@@ -171,9 +172,9 @@ def enkf_parameter_assimilation(
         else:
             Yf = np.zeros((p, N))
             for j in range(N):
-                out = model_step(pop[j], t_idx)
+                out = model_step(pop[j], t_idx, contexts[j])
                 if isinstance(out, tuple):
-                    yj = out
+                    yj, contexts[j] = out
                 else:
                     yj = out
                 yj = np.asarray(yj).ravel()
