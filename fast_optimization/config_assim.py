@@ -100,7 +100,7 @@ class ConfigAssim:
           "y_forecast_mean"  : (T, p)
         """
         # ---- Pull required pieces from model ----
-        for attr in ("model_step", "t_indices", "y_obs", "initialize_population"):
+        for attr in ("model_step", "idx_assim", "Obs_splited", "initialize_population"):
             if not hasattr(model, attr):
                 raise AttributeError(f"Model must provide '{attr}'")
 
