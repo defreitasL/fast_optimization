@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
-from EnKF import EnKFConfig, enkf_parameter_assimilation
+from .EnKF import EnKFConfig, enkf_parameter_assimilation
 
 Array = np.ndarray
 
