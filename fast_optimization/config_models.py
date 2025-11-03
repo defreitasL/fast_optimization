@@ -5,60 +5,60 @@ from .SCE_UA import sce_ua_algorithm
 from .SimulatedAnnealing import simulated_annealing
 import numpy as np
 
-class config_cal(object):
+class ConfigCal(object):
     """
     This class reads input datasets, performs its calibration.
     """
     def __init__(self, cfg):
 
-        self.cal_alg = cfg['cal_alg']
-        self.metrics = cfg['metrics']
+        self.cal_alg = cfg.get('cal_alg')
+        self.metrics = cfg.get('metrics')
 
         if self.cal_alg == 'NSGAII': 
-            self.num_generations = cfg['num_generations']
-            self.population_size = cfg['population_size']
-            self.cross_prob = cfg['cross_prob']
-            self.mutation_rate = cfg['mutation_rate']
-            self.pressure = cfg['pressure']
-            self.regeneration_rate = cfg['regeneration_rate']
-            self.kstop = cfg['kstop']
-            self.pcento = cfg['pcento']
-            self.peps = cfg['peps']
-            self.n_restarts = cfg['n_restarts']
+            self.num_generations = cfg.get('num_generations')
+            self.population_size = cfg.get('population_size')
+            self.cross_prob = cfg.get('cross_prob')
+            self.mutation_rate = cfg.get('mutation_rate')
+            self.pressure = cfg.get('pressure')
+            self.regeneration_rate = cfg.get('regeneration_rate')
+            self.kstop = cfg.get('kstop')
+            self.pcento = cfg.get('pcento')
+            self.peps = cfg.get('peps')
+            self.n_restarts = cfg.get('n_restarts')
             self.indexes = multi_obj_indexes(self.metrics)
         elif self.cal_alg == 'SPEA2':
-            self.num_generations = cfg['num_generations']
-            self.population_size = cfg['population_size']
-            self.pressure = cfg['pressure']
-            self.regeneration_rate = cfg['regeneration_rate']
-            self.cross_prob = cfg['cross_prob']
-            self.mutation_rate = cfg['mutation_rate']
-            self.m = cfg['m']
-            self.eta_mut = cfg['eta_mut']
-            self.kstop = cfg['kstop']
-            self.pcento = cfg['pcento']
-            self.peps = cfg['peps']
-            self.n_restarts = cfg['n_restarts']
+            self.num_generations = cfg.get('num_generations')
+            self.population_size = cfg.get('population_size')
+            self.pressure = cfg.get('pressure')
+            self.regeneration_rate = cfg.get('regeneration_rate')
+            self.cross_prob = cfg.get('cross_prob')
+            self.mutation_rate = cfg.get('mutation_rate')
+            self.m = cfg.get('m')
+            self.eta_mut = cfg.get('eta_mut')
+            self.kstop = cfg.get('kstop')
+            self.pcento = cfg.get('pcento')
+            self.peps = cfg.get('peps')
+            self.n_restarts = cfg.get('n_restarts')
             self.indexes = multi_obj_indexes(self.metrics)
         elif self.cal_alg == 'SCE-UA':
-            self.num_generations = cfg['num_generations']
-            self.population_size = cfg['population_size']
-            # self.magnitude = cfg['magnitude']
-            self.cross_prob = cfg['cross_prob']
-            self.mutation_rate = cfg['mutation_rate']
-            self.regeneration_rate = cfg['regeneration_rate']
-            self.eta_mut = cfg['eta_mut']
-            self.num_complexes = cfg['num_complexes']
-            self.kstop = cfg['kstop']
-            self.pcento = cfg['pcento']
-            self.peps = cfg['peps']
-            self.n_restarts = cfg['n_restarts']
+            self.num_generations = cfg.get('num_generations')
+            self.population_size = cfg.get('population_size')
+            # self.magnitude = cfg.get('magnitude')
+            self.cross_prob = cfg.get('cross_prob')
+            self.mutation_rate = cfg.get('mutation_rate')
+            self.regeneration_rate = cfg.get('regeneration_rate')
+            self.eta_mut = cfg.get('eta_mut')
+            self.num_complexes = cfg.get('num_complexes')
+            self.kstop = cfg.get('kstop')
+            self.pcento = cfg.get('pcento')
+            self.peps = cfg.get('peps')
+            self.n_restarts = cfg.get('n_restarts')
             self.indexes = multi_obj_indexes(self.metrics)
         elif self.cal_alg == 'Simulated Annealing':
-            self.max_iterations = cfg['max_iterations']
-            self.initial_temperature = cfg['initial_temperature']
-            self.cooling_rate = cfg['cooling_rate']
-            self.n_restarts = cfg['n_restarts']
+            self.max_iterations = cfg.get('max_iterations')
+            self.initial_temperature = cfg.get('initial_temperature')
+            self.cooling_rate = cfg.get('cooling_rate')
+            self.n_restarts = cfg.get('n_restarts')
             self.indexes = multi_obj_indexes(self.metrics)
         
 
