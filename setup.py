@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='fast_optimization',
-    version='1.1.23',
+    version='1.1.24',
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
