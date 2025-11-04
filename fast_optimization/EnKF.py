@@ -62,60 +62,16 @@ def _enforce_bounds(pop: np.ndarray, lb: np.ndarray, ub: np.ndarray,
     return np.minimum(np.maximum(pop, lb), ub)
 
 def enkf_parameter_assimilation(
-    model_step: Callable[[np.ndarray, int, Optional[Any]], Any],
-    y_obs: np.ndarray,
-    t_indices: Sequence[int],
-    initialize_population: Callable[[int], Tuple[np.ndarray, np.ndarray, np.ndarray]],
-    R: np.ndarray | float,
+    model_step,
+    y_obs,
+    t_indices,
+    initialize_population,
+    R,
     config: EnKFConfig = EnKFConfig(),
     *,
-    model_step_batch: Optional[Callable[[np.ndarray, int, Optional[Sequence[Any]]], Any]] = None,
-    init_member_contexts: Optional[Sequence[Any]] = None,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Ensemble Kalman Filter for PARAMETER assimilation (random-walk parameters).
-
-    Parameters
-    ----------
-    model_step : callable
-        model_step(theta, t_idx, context=None) -> y_pred OR (y_pred, new_context).
-        theta: (D,), y_pred: (p,) or scalar. If a context is used, return the updated context too.
-    y_obs : ndarray, shape (T, p) or (T,)
-        Observations at T assimilation steps (NaNs allowed -> update skipped, forecast still runs).
-    t_indices : sequence of int
-        Time indices consumed by your model. Your model interprets each t_idx and uses the
-        appropriate forcing window internally.
-    initialize_population : callable
-        f(n) -> (pop, lb, ub). pop: (n,D), lb/ub: (D,).
-    R : float or (p,) or (p,p)
-        Observation error variance, std vector, or covariance matrix.
-    config : EnKFConfig
-        Filter hyperparameters.
-    model_step_batch : optional callable
-        model_step_batch(pop, t_idx, contexts=None) -> Y_pred OR (Y_pred, new_contexts),
-        with Y_pred shape (N, p). Ignored if config.use_batch_step is False.
-    init_member_contexts : optional sequence[Any]
-        Initial per-member contexts (length N). If provided, passed to model_step(_batch) and updated each step.
-
-    Returns
-    -------
-    theta_best : (D,)
-        Final analysis ensemble mean.
-    theta_history : (T, D)
-        Analysis means per step.
-    ensemble_history : (T, D, N)
-        Analysis ensembles per step (transposed for convenient plotting).
-    innovations : (T, p)
-        y_obs - y_forecast_mean per step (NaN where obs missing).
-    y_forecast_mean : (T, p)
-        Ensemble mean of forecasted observations prior to analysis.
-
-    Notes
-    -----
-    • Parameter-only EnKF (no latent state). We add small random-walk noise to θ if configured.
-    • If your observations at step k contain NaNs, we skip the update for those components (or all if all NaN).
-    • If you can vectorize your model with model_step_batch, set config.use_batch_step=True for speed.
-    """
+    model_step_batch=None,
+    init_member_contexts=None,
+):
     if config.rng_seed is not None:
         np.random.seed(config.rng_seed)
 
@@ -125,10 +81,8 @@ def enkf_parameter_assimilation(
     T, p = y_obs.shape
     Rm = _as_cov(R, p)
 
-    # Init ensemble & bounds
     pop, lb, ub = initialize_population(config.ensemble_size)
     if pop.shape[0] != config.ensemble_size:
-        # enforce requested size
         if pop.shape[0] < config.ensemble_size:
             reps = int(np.ceil(config.ensemble_size / pop.shape[0]))
             pop = np.vstack([pop] * reps)[:config.ensemble_size]
@@ -136,21 +90,18 @@ def enkf_parameter_assimilation(
             pop = pop[:config.ensemble_size]
     N, D = pop.shape
 
-    # Optional per-member contexts
     contexts = list(init_member_contexts) if init_member_contexts is not None else [None] * N
 
-    # Bookkeeping
     theta_history = np.zeros((T, D))
     ensemble_history = np.zeros((T, D, N))
     innovations = np.full((T, p), np.nan)
     y_forecast_mean = np.full((T, p), np.nan)
+    y_analysis_mean = np.full((T, p), np.nan)  # NEW: store analyzed shoreline mean
 
     for k, t_idx in enumerate(t_indices):
-        # 1) Forecast: parameter random walk
         pop = _apply_proc_noise(pop, config.parameter_process_std)
         pop = _enforce_bounds(pop, lb, ub, config.clip_to_bounds, config.reflect_bounds)
 
-        # 2) Model forecast: Yf shape (p, N)
         if config.use_batch_step and model_step_batch is not None:
             out = model_step_batch(pop, t_idx, contexts)
             if isinstance(out, tuple):
@@ -158,17 +109,15 @@ def enkf_parameter_assimilation(
                 contexts = list(new_contexts)
             else:
                 Y_pred = out
+            Y_pred = np.asarray(Y_pred)
             if Y_pred.ndim == 1:
                 Y_pred = Y_pred[:, None]
-            if Y_pred.shape[0] == N:
-                Y_pred = Y_pred  # (N, p)
+            if Y_pred.shape == (N, p):
+                Yf = Y_pred.T
+            elif Y_pred.shape == (p, N):
+                Yf = Y_pred
             else:
-                # Expect (N, p). If (p, N) flip heuristically:
-                if Y_pred.shape[1] == N and Y_pred.shape[0] == p:
-                    Y_pred = Y_pred.T
-            if Y_pred.shape != (N, p):
-                raise ValueError(f"model_step_batch must return (N, p), got {Y_pred.shape}")
-            Yf = Y_pred.T  # (p, N)
+                raise ValueError(f"model_step_batch must return (N, p) or (p, N), got {Y_pred.shape}")
         else:
             Yf = np.zeros((p, N))
             for j in range(N):
@@ -182,62 +131,76 @@ def enkf_parameter_assimilation(
                     raise ValueError(f"model_step returned length {yj.size}, expected {p}")
                 Yf[:, j] = yj
 
-        # Optional inflation on parameter anomalies (pre-analysis)
-        Theta_f = pop.T  # (D, N)
+        Theta_f = pop.T
         if config.inflation != 1.0:
-            theta_mean = np.mean(Theta_f, axis=1, keepdims=True)
-            Theta_f = theta_mean + config.inflation * (Theta_f - theta_mean)
+            th_mean_inf = np.mean(Theta_f, axis=1, keepdims=True)
+            Theta_f = th_mean_inf + config.inflation * (Theta_f - th_mean_inf)
 
-        # 3) Sample stats
-        y_mean = np.mean(Yf, axis=1, keepdims=True)         # (p,1)
-        theta_mean = np.mean(Theta_f, axis=1, keepdims=True)# (D,1)
-        Yf_anom = Yf - y_mean                               # (p,N)
-        Theta_anom = Theta_f - theta_mean                   # (D,N)
+        y_mean = np.mean(Yf, axis=1, keepdims=True)
         y_forecast_mean[k] = y_mean.ravel()
+        if k == 0 and config.verbose:
+            print(f"[EnKF] step 1: forecast_mean={y_mean.ravel()[0]:.3f}, obs={y_obs[0,0]:.3f}")
 
-        # 4) Observation mask (handle missing obs)
-        obs_k = y_obs[k]  # (p,)
+        X_f = np.vstack([Theta_f, Yf])      # (D+p, N)
+        x_mean = np.mean(X_f, axis=1, keepdims=True)
+        X_anom = X_f - x_mean
+
+        obs_k = y_obs[k]
         valid = ~np.isnan(obs_k)
         if not np.any(valid):
-            # No update; analysis == forecast
             pop = Theta_f.T
             pop = _enforce_bounds(pop, lb, ub, config.clip_to_bounds, config.reflect_bounds)
-            theta_mean_after = np.mean(pop, axis=0)
-            theta_history[k] = theta_mean_after
+            # carry forecast state forward in contexts
+            if p == 1:
+                y_fore_members = Yf.T
+                for j in range(N):
+                    if contexts[j] is None: contexts[j] = {}
+                    contexts[j]['y_old'] = float(y_fore_members[j, 0])
+            theta_history[k] = np.mean(pop, axis=0)
             ensemble_history[k] = pop.T
+            y_analysis_mean[k] = y_mean.ravel()  # NEW: analysis==forecast when no obs
             continue
 
-        # Restrict to observed components
-        Yf_v = Yf_anom[valid, :]                   # (p_v, N)
-        y_mean_v = y_mean[valid, :]                # (p_v, 1)
-        obs_v = obs_k[valid]                       # (p_v,)
-        Rv = _as_cov(Rm[np.ix_(valid, valid)], np.sum(valid))
+        Yf_anom = X_anom[-p:, :]
+        Yf_v = Yf_anom[valid, :]
+        y_mean_v = y_mean[valid, :]
+        obs_v = obs_k[valid]
+        Rv = _as_cov(Rm[np.ix_(valid, valid)], int(np.sum(valid)))
 
-        P_xy = (Theta_anom @ Yf_v.T) / (N - 1)     # (D, p_v)
-        P_yy = (Yf_v @ Yf_v.T) / (N - 1) + Rv      # (p_v, p_v)
-        # jitter for stability
+        P_xy = (X_anom @ Yf_v.T) / (N - 1)
+        P_yy = (Yf_v @ Yf_v.T) / (N - 1) + Rv
         P_yy = P_yy + np.eye(P_yy.shape[0]) * config.eps_jitter
 
         try:
-            K = P_xy @ np.linalg.inv(P_yy)         # (D, p_v)
+            K = P_xy @ np.linalg.inv(P_yy)
         except np.linalg.LinAlgError:
             K = P_xy @ np.linalg.pinv(P_yy)
 
-        # 5) Innovations
         innovations[k, valid] = obs_v - y_mean_v.ravel()
 
         if config.perturbed_observations:
-            noise = np.random.multivariate_normal(mean=np.zeros(Rv.shape[0]), cov=Rv, size=N).T  # (p_v, N)
-            innov_members = (obs_v[:, None] + noise) - (y_mean_v + Yf_v)   # (p_v, N)
+            noise = np.random.multivariate_normal(mean=np.zeros(Rv.shape[0]), cov=Rv, size=N).T
+            innov_members = (obs_v[:, None] + noise) - (y_mean_v + Yf_v)
         else:
-            innov_members = (obs_v[:, None] - (y_mean_v + Yf_v))           # (p_v, N)
+            innov_members = (obs_v[:, None]) - (y_mean_v + Yf_v)
 
-        # 6) Analysis
-        Theta_a = Theta_f + K @ innov_members   # (D, N)
-        pop = Theta_a.T                         # (N, D)
+        X_a = X_f + K @ innov_members
+        Theta_a = X_a[:-p, :]
+        Y_a = X_a[-p:, :]
+
+        pop = Theta_a.T
         pop = _enforce_bounds(pop, lb, ub, config.clip_to_bounds, config.reflect_bounds)
 
-        # 7) Bookkeeping
+        # write analyzed shoreline to contexts and store mean
+        if p == 1:
+            y_a_members = Y_a.ravel()
+            for j in range(N):
+                if contexts[j] is None: contexts[j] = {}
+                contexts[j]['y_old'] = float(y_a_members[j])
+            y_analysis_mean[k, 0] = float(np.mean(y_a_members))   # NEW: mean analyzed shoreline
+        else:
+            y_analysis_mean[k] = np.mean(Y_a, axis=1)             # NEW: vector case
+
         theta_history[k] = np.mean(pop, axis=0)
         ensemble_history[k] = pop.T
 
@@ -245,4 +208,4 @@ def enkf_parameter_assimilation(
             print(f"[EnKF] step {k+1}/{T}  ||  |innov|={np.linalg.norm(innovations[k, valid]):.3e}")
 
     theta_best = theta_history[-1].copy()
-    return theta_best, theta_history, ensemble_history, innovations, y_forecast_mean
+    return theta_best, theta_history, ensemble_history, innovations, y_forecast_mean, y_analysis_mean

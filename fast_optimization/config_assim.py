@@ -102,7 +102,7 @@ class ConfigAssim:
         model_step = model.model_step
         model_step_batch = model.model_step_batch
         t_indices = model.idx_assim
-        y_obs = model.Obs_splited
+        y_obs = model.Obs_splited[1:]
         initialize_population = model.init_par
 
         # ---- Determine R from cfg (preferred) or model ----
@@ -125,7 +125,7 @@ class ConfigAssim:
                 print("[EnKF] use_batch_step=True but no batch step provided; falling back to per-member calls.")
 
         # ---- Run core EnKF ----
-        theta_best, theta_hist, ens_hist, innov, y_fore_mean = enkf_parameter_assimilation(
+        theta_best, theta_hist, ens_hist, innov, y_fore_mean, y_anal_mean = enkf_parameter_assimilation(
             model_step=model_step,
             y_obs=y_obs,
             t_indices=t_indices,
@@ -136,10 +136,12 @@ class ConfigAssim:
             init_member_contexts=[{'y_old': float(model.Yini)} for _ in range(self.enkf_cfg.ensemble_size)],
         )
 
-        return {
-            "theta_best": theta_best,
-            "theta_history": theta_hist,
-            "ensemble_history": ens_hist,
-            "innovations": innov,
-            "y_forecast_mean": y_fore_mean,
-        }
+        res = {
+                "theta_best": theta_best,
+                "theta_history": theta_hist,
+                "ensemble_history": ens_hist,
+                "innovations": innov,
+                "y_forecast_mean": y_fore_mean,
+                "y_analysis_mean": y_anal_mean,   # NEW
+            }
+        return res
