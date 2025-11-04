@@ -102,7 +102,10 @@ class ConfigAssim:
         model_step = model.model_step
         model_step_batch = model.model_step_batch
         t_indices = model.idx_assim
-        y_obs = model.Obs_splited[1:]
+        if model.type == 'CS' or model.type == 'RT':
+            y_obs = model.Obs_splited[1:]
+        else:
+            y_obs = model.Obs_splited_[1:, :]
         initialize_population = model.init_par
 
         # ---- Determine R from cfg (preferred) or model ----
