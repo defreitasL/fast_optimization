@@ -136,7 +136,7 @@ class ConfigAssim:
             R=R,
             config=self.enkf_cfg,
             model_step_batch=model_step_batch,
-            init_member_contexts=[{'y_old': float(model.Yini)} for _ in range(self.enkf_cfg.ensemble_size)],
+            init_member_contexts=[{'y_old': model.Yini} for _ in range(self.enkf_cfg.ensemble_size)],
         )
 
         res = {
