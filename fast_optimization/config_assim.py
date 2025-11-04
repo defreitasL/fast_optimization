@@ -1,6 +1,6 @@
 # config_assim.py
 from __future__ import annotations
-
+from .objectives_functions import multi_obj_indexes, calculate_metrics
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
@@ -145,3 +145,23 @@ class ConfigAssim:
                 "y_analysis_mean": y_anal_mean,   # NEW
             }
         return res
+    
+    def metrics_values(self, model):
+        """
+        Return the metrics values.
+        """
+        self.metrics = ['rmse', 'pearson', 'bias']
+        self.indexes = multi_obj_indexes(self.metrics)
+        simulation = model.full_run
+        cal = simulation[model.idx_obs_splited]
+
+        metrics_values, metrics_used = calculate_metrics(model.Obs_splited, cal, self.indexes)
+
+        if len(model.idx_validation_for_obs) >0:
+            val = simulation[model.idx_validation_for_obs]
+            obs_v = model.Obs[model.idx_validation_obs]
+            metrics_values_val, _ = calculate_metrics(obs_v, val, self.indexes)
+        else:
+            metrics_values_val = np.zeros(len(self.indexes)) + np.nan
+        
+        return metrics_used, metrics_values, metrics_values_val
