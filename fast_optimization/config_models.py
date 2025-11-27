@@ -66,8 +66,11 @@ class ConfigCal(object):
         """
         Calibrate the model.
         """
-        seed = np.random.randint(0, 100000)
+        seed = 42
         np.random.seed(seed)
+        #⌂ set random seed for reproducibility
+        # Use always the same seed in all subroutines
+        
         if self.cal_alg == 'NSGAII':
             return nsgaii_algorithm_ts(
                 model.model_sim, 
