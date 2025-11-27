@@ -162,7 +162,7 @@ class ConfigAssim:
 
         if len(model.idx_validation_for_obs) >0:
             val = simulation[model.idx_validation_for_obs].flatten()
-            obs_v = model.Obs[model.idx_validation_obs]
+            obs_v = model.Obs_[model.idx_validation_obs,:].flatten()
             metrics_values_val, _ = calculate_metrics(obs_v, val, self.indexes)
         else:
             metrics_values_val = np.zeros(len(self.indexes)) + np.nan
