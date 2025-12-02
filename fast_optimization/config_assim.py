@@ -166,7 +166,7 @@ class ConfigAssim:
         if len(model.idx_validation_for_obs) >0:
             if model.type == 'CS' or model.type == 'RT':
                 val = simulation[model.idx_validation_for_obs]
-                obs_v = model.Obs[model.idx_validation_obs,:]
+                obs_v = model.Obs[model.idx_validation_obs]
             else:
                 val = simulation[model.idx_validation_for_obs].flatten()
                 obs_v = model.Obs_[model.idx_validation_obs,:].flatten()
