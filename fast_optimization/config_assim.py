@@ -156,13 +156,20 @@ class ConfigAssim:
         self.metrics = ['rmse', 'pearson', 'bias']
         self.indexes = multi_obj_indexes(self.metrics)
         simulation = model.full_run
-        cal = simulation[model.idx_obs_splited].flatten()
+        if model.type == 'CS' or model.type == 'RT':
+            cal = simulation[model.idx_obs_splited]
+        else:
+            cal = simulation[model.idx_obs_splited].flatten()
 
         metrics_values, metrics_used = calculate_metrics(model.Obs_splited, cal, self.indexes)
 
         if len(model.idx_validation_for_obs) >0:
-            val = simulation[model.idx_validation_for_obs].flatten()
-            obs_v = model.Obs_[model.idx_validation_obs,:].flatten()
+            if model.type == 'CS' or model.type == 'RT':
+                val = simulation[model.idx_validation_for_obs]
+                obs_v = model.Obs_[model.idx_validation_obs,:]
+            else:
+                val = simulation[model.idx_validation_for_obs].flatten()
+                obs_v = model.Obs_[model.idx_validation_obs,:].flatten()
             metrics_values_val, _ = calculate_metrics(obs_v, val, self.indexes)
         else:
             metrics_values_val = np.zeros(len(self.indexes)) + np.nan
